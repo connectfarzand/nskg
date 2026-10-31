@@ -1170,22 +1170,22 @@
         function renderPartyBiltisTable(items) {
             currentLoadedBiltis = items || [];
 
-            // Collect all bilty IDs already present in #tbl
+            // Collect all bilty IDs already present in #tbl (strictly by unique BiltyId)
             var existingBiltyIds = new Set();
             $('#tbl input[name="SelectedBiltyIds"]').each(function () {
                 var v = $(this).val();
                 if (v) existingBiltyIds.add(String(v));
             });
-            $('#tbl input[name*="Billtino"]').each(function () {
-                var v = $(this).val();
-                if (v && v.trim() !== '') existingBiltyIds.add(String(v.trim()));
+            $('#tbl tr[data-bilty-id]').each(function () {
+                var v = $(this).attr('data-bilty-id');
+                if (v) existingBiltyIds.add(String(v));
             });
 
             var pendingCount = 0;
             var html = '';
 
             items.forEach(function (b) {
-                var isAlreadyInGrid = existingBiltyIds.has(String(b.id)) || (b.billTiNo && existingBiltyIds.has(String(b.billTiNo)));
+                var isAlreadyInGrid = existingBiltyIds.has(String(b.id));
                 var vCount = (b.vouchers && b.vouchers.length) ? b.vouchers.length : (b.voucherCount || (b.voucherId ? 1 : 0));
                 var isDbUsed = (b.isUsed === true) || vCount > 0;
                 var isSelectedState = isAlreadyInGrid || isDbUsed;

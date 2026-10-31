@@ -1188,6 +1188,7 @@ namespace Nskg.Controllers
             public string Vono { get; set; } = "";
             public string Votype { get; set; } = "";
             public string Vodate { get; set; } = "";
+            public DateTime? RawVodate { get; set; }
             public int? Bilno { get; set; }
         }
 
@@ -1249,6 +1250,7 @@ namespace Nskg.Controllers
             }).ToList();
 
             // 2. Pre-index voDetMatches into O(1) Dictionaries to avoid O(N*M) linear scans
+            // STRICT PRIMARY KEY MATCH: If vd.BiltyId is set, it belongs strictly to that BiltyId
             var byBiltyId = voDetMatches
                 .Where(vd => vd.BiltyId.HasValue && vd.BiltyId.Value > 0)
                 .GroupBy(vd => vd.BiltyId!.Value)
@@ -1262,13 +1264,16 @@ namespace Nskg.Controllers
                               Vono = vd.Vono,
                               Votype = vd.Votype,
                               Vodate = vd.Vodate != null ? vd.Vodate.Value.ToString("dd-MMM-yyyy") : "",
+                              RawVodate = vd.Vodate,
                               Bilno = vd.Bilno
                           })
                           .ToList()
                 );
 
+            // LEGACY ONLY: Only include VoDet where BiltyId is NULL or 0!
+            // If a VoDet already has a BiltyId, it belongs to that bilty and can NEVER be matched loosely to another bilty!
             var byBilltino = voDetMatches
-                .Where(vd => vd.Billtino > 0)
+                .Where(vd => (!vd.BiltyId.HasValue || vd.BiltyId.Value == 0) && vd.Billtino > 0)
                 .GroupBy(vd => vd.Billtino)
                 .ToDictionary(
                     g => g.Key,
@@ -1280,6 +1285,7 @@ namespace Nskg.Controllers
                               Vono = vd.Vono,
                               Votype = vd.Votype,
                               Vodate = vd.Vodate != null ? vd.Vodate.Value.ToString("dd-MMM-yyyy") : "",
+                              RawVodate = vd.Vodate,
                               Bilno = vd.Bilno
                           })
                           .ToList()
@@ -1300,7 +1306,7 @@ namespace Nskg.Controllers
                 var vouchersForThisBilty = new List<BiltyVoucherItem>();
                 var seenVoucherIds = new HashSet<int>();
 
-                // Fast O(1) lookup by BiltyId (exact match)
+                // 1. Direct exact lookup by BiltyId (Primary Foreign Key)
                 if (byBiltyId.TryGetValue(x.Id, out var itemsById))
                 {
                     foreach (var v in itemsById)
@@ -1310,21 +1316,35 @@ namespace Nskg.Controllers
                     }
                 }
 
-                // Fast O(1) lookup by Billtino (verify BilNo if available to prevent wrong bill match)
-                int bNo = (int)(x.BillTiNo ?? 0);
-                if (bNo > 0 && byBilltino.TryGetValue(bNo, out var itemsByNo))
+                // 2. Legacy fallback lookup by Billtino:
+                // CRITICAL: Only check legacy unlinked vouchers if this bilty was actually marked as used (DescYN1 == 'Y' or VoucherId > 0)
+                // If a bilty has DescYN1 != 'Y' and VoucherId == null and no VoDet links to its Id, it is brand new / unpicked!
+                if ((x.DescYN1 == "Y" || (x.VoucherId.HasValue && x.VoucherId.Value > 0)) && vouchersForThisBilty.Count == 0)
                 {
-                    foreach (var v in itemsByNo)
+                    int bNo = (int)(x.BillTiNo ?? 0);
+                    if (bNo > 0 && byBilltino.TryGetValue(bNo, out var itemsByNo))
                     {
-                        if (x.BilNo == null || x.BilNo == 0 || v.Bilno == null || v.Bilno == 0 || v.Bilno == (int)x.BilNo.Value)
+                        foreach (var v in itemsByNo)
                         {
+                            // Voucher date cannot be earlier than bilty date
+                            if (v.RawVodate.HasValue && x.DocDate.HasValue && v.RawVodate.Value.Date < x.DocDate.Value.Date)
+                            {
+                                continue;
+                            }
+
+                            // If BilNo is present on either, verify it matches
+                            if (x.BilNo.HasValue && x.BilNo.Value > 0 && v.Bilno.HasValue && v.Bilno.Value > 0 && v.Bilno.Value != (int)x.BilNo.Value)
+                            {
+                                continue;
+                            }
+
                             if (seenVoucherIds.Add(v.Id))
                                 vouchersForThisBilty.Add(v);
                         }
                     }
                 }
 
-                // Verify IssHead.VoucherId only if VoDet actually contains this bilty or party
+                // 3. Verify IssHead.VoucherId only if VoDet actually contains this bilty or party
                 if (x.VoucherId.HasValue && x.VoucherId.Value > 0 && !seenVoucherIds.Contains(x.VoucherId.Value))
                 {
                     if (extraVoucherMap.TryGetValue(x.VoucherId.Value, out var ev))
@@ -1332,7 +1352,7 @@ namespace Nskg.Controllers
                         bool actuallyBelongs = _context.VoDet.AsNoTracking().Any(vd =>
                             !vd.IsDeleted &&
                             vd.VoHeadId == x.VoucherId.Value &&
-                            (vd.BiltyId == x.Id || (vd.Billtino == bNo && (x.CustomerId == null || vd.gl3Id == x.CustomerId))));
+                            (vd.BiltyId == x.Id || ((!vd.BiltyId.HasValue || vd.BiltyId.Value == 0) && vd.Billtino == (int)(x.BillTiNo ?? 0) && (x.CustomerId == null || vd.gl3Id == x.CustomerId))));
 
                         if (actuallyBelongs && seenVoucherIds.Add(x.VoucherId.Value))
                         {
@@ -1341,7 +1361,8 @@ namespace Nskg.Controllers
                                 Id = ev.Id,
                                 Vono = ev.Vono ?? "",
                                 Votype = ev.Votype ?? "",
-                                Vodate = ev.Vodate != null ? ev.Vodate.Value.ToString("dd-MMM-yyyy") : ""
+                                Vodate = ev.Vodate != null ? ev.Vodate.Value.ToString("dd-MMM-yyyy") : "",
+                                RawVodate = ev.Vodate
                             });
                         }
                     }
@@ -1355,6 +1376,9 @@ namespace Nskg.Controllers
                     .ToList();
                 string combinedVono = string.Join(", ", vonoList);
                 int? primaryVoucherId = vouchersForThisBilty.FirstOrDefault()?.Id ?? x.VoucherId;
+
+                // CRITICAL: A bilty is only used if it has vouchers or DescYN1 == 'Y'
+                bool isUsed = voucherCount > 0 || (x.DescYN1 == "Y");
 
                 return (object)new
                 {
@@ -1371,7 +1395,7 @@ namespace Nskg.Controllers
                     vono = combinedVono,
                     voucherCount = voucherCount,
                     vouchers = vouchersForThisBilty.Select(v => new { id = v.Id, vono = v.Vono, votype = v.Votype, vodate = v.Vodate }).ToList(),
-                    isUsed = (x.DescYN1 == "Y" || voucherCount > 0)
+                    isUsed = isUsed
                 };
             }).ToList();
 

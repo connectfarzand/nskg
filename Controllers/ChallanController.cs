@@ -89,7 +89,14 @@ namespace Nskg.Controllers
                 if (!string.IsNullOrWhiteSpace(col1Search))
                 {
                     var val1 = col1Search.Trim();
-                    query = query.Where(x => x.ChalNo != null && x.ChalNo.ToString().Contains(val1));
+                    if (int.TryParse(val1, out var chalNum))
+                    {
+                        query = query.Where(x => x.ChalNo == chalNum);
+                    }
+                    else
+                    {
+                        query = query.Where(x => x.ChalNo != null && x.ChalNo.ToString() == val1);
+                    }
                 }
 
                 if (!string.IsNullOrWhiteSpace(col2Search))
@@ -208,10 +215,10 @@ namespace Nskg.Controllers
                 query = query.Where(x => x.CompanyId == companyId || (!string.IsNullOrEmpty(companyCode) && companyCode != "0" && x.CoCode == companyCode));
             }
 
-            var lastEntry = query.OrderByDescending(x => x.Id).FirstOrDefault();
+            var lastEntry = query.OrderByDescending(x => x.DocDate).ThenByDescending(x => x.Id).FirstOrDefault();
             if (lastEntry == null)
             {
-                lastEntry = _context.ChallanHead.Where(x => !x.IsDeleted).OrderByDescending(x => x.Id).FirstOrDefault();
+                lastEntry = _context.ChallanHead.Where(x => !x.IsDeleted).OrderByDescending(x => x.DocDate).ThenByDescending(x => x.Id).FirstOrDefault();
             }
 
             if (lastEntry != null)
@@ -252,8 +259,8 @@ namespace Nskg.Controllers
             {
                 Head = new ChallanHead
                 {
-                    DocDate = lastEntry?.DocDate ?? DateTime.Now,
-                    DocNo = GenerateDocNo(),
+                    DocDate = lastEntry?.DocDate ?? DateTime.Today,
+                    DocNo = GenerateDocNo(companyId > 0 ? companyId : 1006, lastEntry?.DocDate),
                     StationId = lastEntry?.StationId ?? 0,
                     Station = lastEntry?.Station,
                     StationCode = lastEntry?.StationCode,
@@ -326,10 +333,17 @@ namespace Nskg.Controllers
                 // =========================
                 // FILL HEAD AUTO VALUES
                 // =========================
-                model.Head.DocNo ??= GenerateDocNo();
-                model.Head.CompanyId = User.GetCompanyId();
+                int currentCompanyId = User.GetCompanyId();
+                if (currentCompanyId <= 0) currentCompanyId = 1006;
+                model.Head.CompanyId = currentCompanyId;
                 model.Head.FyId = User.GetFinancialYearId();
                 model.Head.CoCode = User.GetCompanyCode();
+
+                if (string.IsNullOrWhiteSpace(model.Head.DocNo) ||
+                    _context.ChallanHead.Any(x => !x.IsDeleted && x.CompanyId == model.Head.CompanyId && x.DocNo == model.Head.DocNo))
+                {
+                    model.Head.DocNo = GenerateDocNo(model.Head.CompanyId, model.Head.DocDate);
+                }
 
                 model.Head.TotPaid = model.Details.Sum(x => x.PaidAmt ?? 0);
 
@@ -1598,36 +1612,50 @@ namespace Nskg.Controllers
             return trimmed;
         }
 
-        private string GenerateDocNo()
+        private string GenerateDocNo(int companyId = 0, DateTime? referenceDate = null)
         {
+            if (companyId <= 0) companyId = User.GetCompanyId();
+            if (companyId <= 0) companyId = 1006;
+
             var fy = _context.FinancialYears
                 .FirstOrDefault(x =>
                     x.Id == User.GetFinancialYearId());
 
             if (fy == null)
-                throw new Exception("Active financial year not found.");
-
-            string monthPart = DateTime.Now.ToString("MM");
-            string yearPart = fy.StartDate.ToString("yy");
-
-            string code = monthPart + yearPart;   // e.g. 0426
-
-            var lastDoc = _context.ChallanHead
-                .Where(x => x.DocNo.EndsWith("/" + code))
-                .OrderByDescending(x => x.Id)
-                .Select(x => x.DocNo)
-                .FirstOrDefault();
-
-            int nextNumber = 1;
-
-            if (!string.IsNullOrEmpty(lastDoc))
             {
-                var numericPart = lastDoc.Split('/')[0];
-
-                if (int.TryParse(numericPart, out int lastNumber))
-                    nextNumber = lastNumber + 1;
+                fy = _context.FinancialYears.FirstOrDefault(x => !x.IsClosed && !x.IsDeleted)
+                     ?? _context.FinancialYears.FirstOrDefault(x => !x.IsDeleted)
+                     ?? _context.FinancialYears.FirstOrDefault();
             }
 
+            DateTime refDate = referenceDate ?? DateTime.Today;
+            string monthPart = refDate.ToString("MM");
+            string yearPart = refDate.ToString("yy");
+
+            string code = monthPart + yearPart;   // e.g. 1026
+
+            var query = _context.ChallanHead
+                .Where(x => !x.IsDeleted && x.DocNo != null && x.DocNo.EndsWith("/" + code));
+
+            if (companyId > 0)
+            {
+                query = query.Where(x => x.CompanyId == companyId);
+            }
+
+            var docList = query.Select(x => x.DocNo).ToList();
+
+            int maxNumber = 0;
+            foreach (var doc in docList)
+            {
+                if (string.IsNullOrWhiteSpace(doc)) continue;
+                var parts = doc.Split('/');
+                if (parts.Length > 0 && int.TryParse(parts[0].Trim(), out int num))
+                {
+                    if (num > maxNumber) maxNumber = num;
+                }
+            }
+
+            int nextNumber = maxNumber + 1;
             return $"{nextNumber:D4}/{code}";
         }
     }

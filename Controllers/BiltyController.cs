@@ -67,12 +67,13 @@ namespace Nskg.Controllers
                 if (!string.IsNullOrWhiteSpace(searchValue))
                 {
                     searchValue = searchValue.Trim().ToLower();
+                    bool isSearchNum = decimal.TryParse(searchValue, out var searchNum);
                     query = query.Where(x =>
                         (x.DocNo != null && x.DocNo.ToLower().Contains(searchValue)) ||
                         (x.CusName != null && x.CusName.ToLower().Contains(searchValue)) ||
                         (x.Fooder != null && x.Fooder.ToLower().Contains(searchValue)) ||
-                        (x.BillTiNo != null && x.BillTiNo.ToString().Contains(searchValue)) ||
-                        (x.BilNo != null && x.BilNo.ToString().Contains(searchValue)) ||
+                        (isSearchNum && (x.BillTiNo == searchNum || x.BilNo == searchNum)) ||
+                        (!isSearchNum && ((x.BillTiNo != null && x.BillTiNo.ToString() == searchValue) || (x.BilNo != null && x.BilNo.ToString() == searchValue))) ||
                         (x.NetAmt != null && x.NetAmt.ToString().Contains(searchValue))
                     );
                 }
@@ -95,13 +96,27 @@ namespace Nskg.Controllers
                 if (!string.IsNullOrWhiteSpace(col1Search))
                 {
                     var val1 = col1Search.Trim();
-                    query = query.Where(x => x.BillTiNo != null && x.BillTiNo.ToString().Contains(val1));
+                    if (decimal.TryParse(val1, out var num1))
+                    {
+                        query = query.Where(x => x.BillTiNo == num1);
+                    }
+                    else
+                    {
+                        query = query.Where(x => x.BillTiNo != null && x.BillTiNo.ToString() == val1);
+                    }
                 }
 
                 if (!string.IsNullOrWhiteSpace(col2Search))
                 {
                     var val2 = col2Search.Trim();
-                    query = query.Where(x => x.BilNo != null && x.BilNo.ToString().Contains(val2));
+                    if (decimal.TryParse(val2, out var num2))
+                    {
+                        query = query.Where(x => x.BilNo == num2);
+                    }
+                    else
+                    {
+                        query = query.Where(x => x.BilNo != null && x.BilNo.ToString() == val2);
+                    }
                 }
 
                 if (!string.IsNullOrWhiteSpace(col3Search))
@@ -235,8 +250,8 @@ namespace Nskg.Controllers
             {
                 Head = new IssHead
                 {
-                    DocDate = last?.DocDate ?? DateTime.Now,
-                    DocNo = GenerateDocNo(),
+                    DocDate = last?.DocDate ?? DateTime.Today,
+                    DocNo = GenerateDocNo(companyId > 0 ? companyId : 1006, last?.DocDate),
                     StationId = last?.StationId ?? 0,
                     CustomerId = last?.CustomerId ?? 0,
                     SendTo = last?.SendTo,
@@ -282,9 +297,16 @@ namespace Nskg.Controllers
                    && a.Parent == "P").Select(a => a.Accode).Distinct().FirstOrDefault();
 
                 // Security / consistency fields
-                model.Head.DocNo = GenerateDocNo();
-                model.Head.CompanyId = User.GetCompanyId();
+                int currentCompanyId = User.GetCompanyId();
+                if (currentCompanyId <= 0) currentCompanyId = 1006;
+                model.Head.CompanyId = currentCompanyId;
                 model.Head.CoCode = User.GetCompanyCode();
+
+                if (string.IsNullOrWhiteSpace(model.Head.DocNo) ||
+                    _context.IssHead.Any(x => !x.IsDeleted && x.CompanyId == model.Head.CompanyId && x.DocNo == model.Head.DocNo))
+                {
+                    model.Head.DocNo = GenerateDocNo(model.Head.CompanyId, model.Head.DocDate);
+                }
                 model.Head.UserId = User.GetUserId();
                 model.Head.FyId = User.GetFinancialYearId();
                 model.Head.CusName = DetailAccount?.Name;
@@ -734,36 +756,50 @@ namespace Nskg.Controllers
                 throw;
             }
         }
-        private string GenerateDocNo()
+        private string GenerateDocNo(int companyId = 0, DateTime? referenceDate = null)
         {
+            if (companyId <= 0) companyId = User.GetCompanyId();
+            if (companyId <= 0) companyId = 1006;
+
             var fy = _context.FinancialYears
                 .FirstOrDefault(x =>
                     x.Id == User.GetFinancialYearId());
 
             if (fy == null)
-                throw new Exception("Active financial year not found.");
-
-            string monthPart = DateTime.Now.ToString("MM");
-            string yearPart = fy.StartDate.ToString("yy");
-
-            string code = monthPart + yearPart;   // e.g. 0426
-
-            var lastDoc = _context.IssHead
-                .Where(x => x.DocNo.EndsWith("/" + code))
-                .OrderByDescending(x => x.Id)
-                .Select(x => x.DocNo)
-                .FirstOrDefault();
-
-            int nextNumber = 1;
-
-            if (!string.IsNullOrEmpty(lastDoc))
             {
-                var numericPart = lastDoc.Split('/')[0];
-
-                if (int.TryParse(numericPart, out int lastNumber))
-                    nextNumber = lastNumber + 1;
+                fy = _context.FinancialYears.FirstOrDefault(x => !x.IsClosed && !x.IsDeleted)
+                     ?? _context.FinancialYears.FirstOrDefault(x => !x.IsDeleted)
+                     ?? _context.FinancialYears.FirstOrDefault();
             }
 
+            DateTime refDate = referenceDate ?? DateTime.Today;
+            string monthPart = refDate.ToString("MM");
+            string yearPart = refDate.ToString("yy");
+
+            string code = monthPart + yearPart;   // e.g. 1026
+
+            var query = _context.IssHead
+                .Where(x => !x.IsDeleted && x.DocNo != null && x.DocNo.EndsWith("/" + code));
+
+            if (companyId > 0)
+            {
+                query = query.Where(x => x.CompanyId == companyId);
+            }
+
+            var docList = query.Select(x => x.DocNo).ToList();
+
+            int maxNumber = 0;
+            foreach (var doc in docList)
+            {
+                if (string.IsNullOrWhiteSpace(doc)) continue;
+                var parts = doc.Split('/');
+                if (parts.Length > 0 && int.TryParse(parts[0].Trim(), out int num))
+                {
+                    if (num > maxNumber) maxNumber = num;
+                }
+            }
+
+            int nextNumber = maxNumber + 1;
             return $"{nextNumber:D4}/{code}";
         }
     }

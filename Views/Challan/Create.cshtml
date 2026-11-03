@@ -1693,6 +1693,9 @@
 
         // Validation before submit - modified: removed "at least one bilty" check
         function validateBeforeSubmit() {
+            if ($("#challanForm").data('submitted') === true) {
+                return false;
+            }
             // Check if all required fields are filled for rows that have data entered
             let isValid = true;
             $("#tbodyItems tr").not("#noDataRow").each(function() {

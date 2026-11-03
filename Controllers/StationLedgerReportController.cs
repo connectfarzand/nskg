@@ -216,10 +216,7 @@ namespace Nskg.Controllers
                         SELECT 
                             1 AS SortOrder,
                             CAST(a.VODATE AS DATE) AS DocDate,
-                            CASE 
-                                WHEN CHARINDEX('/', a.VONO) > 0 THEN LEFT(a.VONO, CHARINDEX('/', a.VONO) - 1)
-                                ELSE ISNULL(a.VONO, '')
-                            END AS DocNo,
+                            ISNULL(a.VONO, '') AS DocNo,
                             ISNULL(a.VOTYPE, '') AS Votype,
                             CASE WHEN a.BILLTINO IS NOT NULL AND a.BILLTINO <> 0 THEN CAST(CAST(a.BILLTINO AS BIGINT) AS VARCHAR(50)) ELSE NULL END AS Comm,
                             COALESCE(
@@ -403,15 +400,14 @@ namespace Nskg.Controllers
 
                 sb.Append("<table><thead><tr>");
                 sb.Append("<th style='width:65px;'>Doc.Date</th>");
-                sb.Append("<th style='width:55px;'>Doc. #</th>");
+                sb.Append("<th style='width:80px;'>Doc. #</th>");
                 sb.Append("<th style='width:35px;'>Typ</th>");
                 sb.Append("<th style='width:45px;'>Comm</th>");
                 sb.Append("<th style='width:80px;'>Vehicle No</th>");
                 sb.Append("<th style='width:120px;'>Station</th>");
                 sb.Append("<th>Narration</th>");
                 sb.Append("<th style='width:55px;'>Comapny</th>");
-                sb.Append("<th class='num' style='width:75px;'>Delivery AMT</th>");
-                sb.Append("<th class='num' style='width:70px;'>6% Delivery</th>");
+                sb.Append("<th class='num' style='width:85px;'>Delivery AMT</th>");
                 sb.Append("<th class='num' style='width:75px;'>DEBIT</th>");
                 sb.Append("<th class='num' style='width:75px;'>CREDIT</th>");
                 sb.Append("<th class='num' style='width:85px;'>BALANCE</th>");
@@ -447,7 +443,6 @@ namespace Nskg.Controllers
                     sb.Append($"<td>{row["Narration"]}</td>");
                     sb.Append($"<td>{row["CompanyCode"]}</td>");
                     sb.Append($"<td class='num'>{(delAmt != 0 ? delAmt.ToString("#,##0") : "")}</td>");
-                    sb.Append($"<td class='num'>{(delAmt2 != 0 ? delAmt2.ToString("#,##0") : "")}</td>");
                     sb.Append($"<td class='num'>{(debit != 0 ? debit.ToString("#,##0") : "")}</td>");
                     sb.Append($"<td class='num'>{(credit != 0 ? credit.ToString("#,##0") : "")}</td>");
                     sb.Append($"<td class='num bold'>{balance:#,##0}</td>");
@@ -457,7 +452,7 @@ namespace Nskg.Controllers
                 decimal closingBal = (dt.Rows.Count > 0 && dt.Rows[dt.Rows.Count - 1]["Balance"] != DBNull.Value) ? Convert.ToDecimal(dt.Rows[dt.Rows.Count - 1]["Balance"]) : 0;
 
                 sb.Append("</tbody><tfoot><tr>");
-                sb.Append("<td colspan='10' class='bold' style='text-align:left;'>GRAND TOTAL.........................................................................................................</td>");
+                sb.Append("<td colspan='9' class='bold' style='text-align:left;'>GRAND TOTAL.........................................................................................................</td>");
                 sb.Append($"<td class='num bold'>{totalDebit:#,##0.00}</td>");
                 sb.Append($"<td class='num bold'>{totalCredit:#,##0.00}</td>");
                 sb.Append($"<td class='num bold'>{closingBal:#,##0.00}</td>");
@@ -499,7 +494,7 @@ namespace Nskg.Controllers
                 sb.AppendLine();
 
                 // Table Header
-                sb.AppendLine("Doc.Date,Doc. #,Typ,Comm,Vehicle No,Station,Narration,Comapny,Delivery AMT,6% Delivery,DEBIT,CREDIT,BALANCE");
+                sb.AppendLine("Doc.Date,Doc. #,Typ,Comm,Vehicle No,Station,Narration,Comapny,Delivery AMT,DEBIT,CREDIT,BALANCE");
 
                 foreach (DataRow row in dt.Rows)
                 {
@@ -512,12 +507,11 @@ namespace Nskg.Controllers
                     string narration = EscapeCsv(row["Narration"]?.ToString() ?? "");
                     string companyCode = EscapeCsv(row["CompanyCode"]?.ToString() ?? "");
                     string deliveryAmt = row["DeliveryAmt"] != DBNull.Value && row["DeliveryAmt"] != null && Convert.ToDecimal(row["DeliveryAmt"]) != 0 ? Convert.ToDecimal(row["DeliveryAmt"]).ToString("#,##0") : "";
-                    string deliveryAmt2 = row["DeliveryAmt2"] != DBNull.Value && row["DeliveryAmt2"] != null && Convert.ToDecimal(row["DeliveryAmt2"]) != 0 ? Convert.ToDecimal(row["DeliveryAmt2"]).ToString("#,##0") : "";
                     string debit = row["Debit"] != DBNull.Value && Convert.ToDecimal(row["Debit"]) != 0 ? Convert.ToDecimal(row["Debit"]).ToString("#,##0") : "";
                     string credit = row["Credit"] != DBNull.Value && Convert.ToDecimal(row["Credit"]) != 0 ? Convert.ToDecimal(row["Credit"]).ToString("#,##0") : "";
                     string balance = row["Balance"] != DBNull.Value ? Convert.ToDecimal(row["Balance"]).ToString("#,##0") : "";
 
-                    sb.AppendLine($"{docDate},{docNo},{votype},{comm},{vehicleNo},{station},{narration},{companyCode},{deliveryAmt},{deliveryAmt2},{debit},{credit},{balance}");
+                    sb.AppendLine($"{docDate},{docNo},{votype},{comm},{vehicleNo},{station},{narration},{companyCode},{deliveryAmt},{debit},{credit},{balance}");
                 }
 
                 byte[] bytes = Encoding.UTF8.GetBytes(sb.ToString());

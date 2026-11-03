@@ -1297,6 +1297,9 @@
 
         // Validation before submit
         function validateBeforeSubmit() {
+            if ($("#CommBookForm").data('submitted') === true) {
+                return false;
+            }
             if ($("#tbodyItems tr").length === 0 || $("#noDataRow").length > 0) {
                 alert("Please add at least one bilty detail before saving.");
                 return false;

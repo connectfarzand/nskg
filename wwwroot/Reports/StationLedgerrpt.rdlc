@@ -12,7 +12,7 @@
             </TablixColumn>
             <!-- 2. Doc. # -->
             <TablixColumn>
-              <Width>0.50in</Width>
+              <Width>0.75in</Width>
             </TablixColumn>
             <!-- 3. Typ -->
             <TablixColumn>
@@ -44,7 +44,10 @@
             </TablixColumn>
             <!-- 10. 6% Delivery -->
             <TablixColumn>
-              <Width>0.85in</Width>
+              <Width>0.001in</Width>
+              <Visibility>
+                <Hidden>true</Hidden>
+              </Visibility>
             </TablixColumn>
             <!-- 11. DEBIT -->
             <TablixColumn>

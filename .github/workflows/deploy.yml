@@ -32,10 +32,13 @@ jobs:
       - name: Generate Pre-compiled EF Migration Bundle
         run: |
           dotnet ef migrations bundle \
+            --project Nskg.csproj \
+            --startup-project Nskg.csproj \
             --configuration Release \
-            --runtime linux-arm64 \
+            --target-runtime linux-arm64 \
             --output ./publish_artifact/efbundle \
             --force
+          chmod +x ./publish_artifact/efbundle
 
       - name: Compress Release Artifact
         run: |

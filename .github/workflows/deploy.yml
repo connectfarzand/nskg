@@ -1,0 +1,57 @@
+name: Build on GitHub & Deploy to Server
+
+    on:
+      push:
+        branches:
+          - production
+      workflow_dispatch:
+
+    jobs:
+      build-and-deploy:
+        name: Build (GitHub Cloud) & Deploy (Oracle Server)
+        runs-on: ubuntu-latest
+
+        steps:
+          - name: Checkout Code
+            uses: actions/checkout@v4
+
+          - name: Setup .NET 10 SDK
+            uses: actions/setup-dotnet@v4
+            with:
+              dotnet-version: '10.0.x'
+
+          - name: Install EF Core Tool on GitHub Runner
+            run: dotnet tool install --global dotnet-ef
+
+          # Heavy build done on GitHub (0% CPU on your server)
+          - name: Compile & Publish ASP.NET Core for Linux ARM64
+            run: |
+              dotnet publish Nskg.csproj -c Release -r linux-arm64 --self-contained false -o ./publish_artifact
+
+          - name: Generate Pre-compiled EF Migration Bundle
+            run: |
+              dotnet ef migrations bundle -r linux-arm64 -o ./publish_artifact/efbundle -f --no-build
+
+          - name: Compress Release Artifact
+            run: |
+              tar -czf release.tar.gz -C ./publish_artifact .
+
+          # Upload pre-built release package to server
+          - name: Upload Artifact to Server via SCP
+            uses: appleboy/scp-action@v0.1.7
+            with:
+              host: ${{ secrets.SERVER_HOST }}
+              username: ${{ secrets.SERVER_USER }}
+              key: ${{ secrets.SERVER_SSH_KEY }}
+              source: "release.tar.gz"
+              target: "/home/ubuntu/"
+
+          # Server only unpacks and restarts in 2 seconds
+          - name: Execute Fast Deploy on Server via SSH
+            uses: appleboy/ssh-action@v1.0.3
+            with:
+              host: ${{ secrets.SERVER_HOST }}
+              username: ${{ secrets.SERVER_USER }}
+              key: ${{ secrets.SERVER_SSH_KEY }}
+              script: |
+                /home/ubuntu/deploy-artifact.sh /home/ubuntu/release.tar.gz

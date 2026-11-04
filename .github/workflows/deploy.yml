@@ -28,10 +28,14 @@ jobs:
       - name: Compile & Publish ASP.NET Core for Linux ARM64
         run: |
           dotnet publish Nskg.csproj -c Release -r linux-arm64 --self-contained false -o ./publish_artifact
-
+      
       - name: Generate Pre-compiled EF Migration Bundle
         run: |
-          dotnet ef migrations bundle -r linux-arm64 -o ./publish_artifact/efbundle -f --no-build
+          dotnet ef migrations bundle \
+            --configuration Release \
+            --runtime linux-arm64 \
+            --output ./publish_artifact/efbundle \
+            --force
 
       - name: Compress Release Artifact
         run: |

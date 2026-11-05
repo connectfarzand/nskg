@@ -14,6 +14,12 @@ namespace Nskg.Data
         {
         }
 
+        protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
+        {
+            base.OnConfiguring(optionsBuilder);
+            optionsBuilder.ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.RelationalEventId.PendingModelChangesWarning));
+        }
+
         //public DbSet<Models.Form> Forms { get; set; }
         //public DbSet<Models.RoleFormPermission> RoleFormPermissions { get; set; }
         // 🔥 ADD THESE - Map to existing tables

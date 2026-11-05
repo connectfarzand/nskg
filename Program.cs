@@ -15,7 +15,10 @@ Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
 
 // DB Connection
 builder.Services.AddDbContext<ApplicationDbContext>(options =>
-    options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection")));
+{
+    options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection"));
+    options.ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.RelationalEventId.PendingModelChangesWarning));
+});
 
 // Identity Config
 builder.Services.AddDefaultIdentity<IdentityUser>(options =>

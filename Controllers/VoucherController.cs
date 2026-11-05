@@ -15,6 +15,7 @@ using System.ComponentModel.Design;
 namespace Nskg.Controllers
 {
     [Authorize] // Add authorization if needed
+    [RequestFormLimits(ValueCountLimit = 10000)]
     public class VoucherController : Controller
     {
         private readonly ApplicationDbContext _context;

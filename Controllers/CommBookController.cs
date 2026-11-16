@@ -347,10 +347,45 @@ namespace Nskg.Controllers
                 model.Head.FinancialYearId = User.GetFinancialYearId();
                 if (model.Head.CompanyId <= 0) model.Head.CompanyId = 1006;
 
-                if (string.IsNullOrWhiteSpace(model.Head.DocNo) ||
-                    _context.CommHead.Any(x => !x.IsDeleted && x.CompanyId == model.Head.CompanyId && x.DocNo == model.Head.DocNo))
+                string currentUser = User.Identity?.Name ?? string.Empty;
+
+                // Anti-Double Submit / Duplicate Check 1: DocNo
+                if (!string.IsNullOrWhiteSpace(model.Head.DocNo))
+                {
+                    var existingComm = _context.CommHead.FirstOrDefault(x => !x.IsDeleted && x.CompanyId == model.Head.CompanyId && x.DocNo == model.Head.DocNo);
+                    if (existingComm != null)
+                    {
+                        if ((existingComm.CreatedBy == currentUser || string.IsNullOrEmpty(currentUser))
+                            && existingComm.CreatedOn >= DateTime.Now.AddSeconds(-120))
+                        {
+                            TempData["SuccessMessage"] = $"✅ Commission Book {existingComm.DocNo} was already saved.";
+                            return RedirectToAction(nameof(Index));
+                        }
+
+                        model.Head.DocNo = GenerateDocNo(model.Head.CompanyId, model.Head.DocDate);
+                    }
+                }
+                else
                 {
                     model.Head.DocNo = GenerateDocNo(model.Head.CompanyId, model.Head.DocDate);
+                }
+
+                // Anti-Double Submit Check 2: Same vehicle and same date created within last 60 seconds
+                if (!string.IsNullOrWhiteSpace(model.Head.VehicleNo))
+                {
+                    DateTime cutoff60 = DateTime.Now.AddSeconds(-60);
+                    var recentVehicleComm = _context.CommHead.FirstOrDefault(x => !x.IsDeleted
+                        && x.CompanyId == model.Head.CompanyId
+                        && x.VehicleNo == model.Head.VehicleNo.Trim()
+                        && x.DocDate == model.Head.DocDate
+                        && (string.IsNullOrEmpty(currentUser) || x.CreatedBy == currentUser)
+                        && x.CreatedOn >= cutoff60);
+
+                    if (recentVehicleComm != null)
+                    {
+                        TempData["SuccessMessage"] = $"✅ Commission Book {recentVehicleComm.DocNo} for vehicle {recentVehicleComm.VehicleNo} was already saved.";
+                        return RedirectToAction(nameof(Index));
+                    }
                 }
 
                 model.Head.PaidAmt = model.Details.Sum(x => x.PaidAmt ?? 0);

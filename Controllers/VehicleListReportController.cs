@@ -156,7 +156,7 @@ namespace Nskg.Controllers
         }
 
         [HttpGet]
-        public IActionResult OnScreenReport(DateTime? fromDate, DateTime? toDate, string? accode, int? companyId, bool isPrintView = false)
+        public IActionResult OnScreenReport(DateTime? fromDate, DateTime? toDate, string? accode, int? companyId, bool isPrintView = false, bool isForPdf = false)
         {
             int selectedCompanyId = GetCompanyId(companyId);
             try
@@ -193,12 +193,22 @@ namespace Nskg.Controllers
                     }
                 </style>");
 
+                if (!isForPdf)
+                {
+                    sb.Append("<style>" + Nskg.Helpers.ReportPaginationHelper.GetPaginationStyles() + "</style>");
+                }
+
                 if (isPrintView)
                 {
                     sb.Append("<script>window.onload = function() { window.print(); };</script>");
                 }
 
                 sb.Append("</head><body>");
+
+                if (!isForPdf && !isPrintView)
+                {
+                    sb.Append(Nskg.Helpers.ReportPaginationHelper.GetPaginationToolbarHtml(reportTitle));
+                }
 
                 sb.Append("<div class='header-box'>");
                 sb.Append($"<h2>{compName}</h2>");
@@ -324,7 +334,14 @@ namespace Nskg.Controllers
                     sb.Append("<td colspan='3' style='text-align:right;' class='bold'>GRAND TOTAL:</td>");
                     sb.Append($"<td class='num bold'>{totFright:#,##0}</td>");
                 }
-                sb.Append("</tr></tfoot></table></body></html>");
+                sb.Append("</tr></tfoot></table>");
+
+                if (!isForPdf && !isPrintView)
+                {
+                    sb.Append(Nskg.Helpers.ReportPaginationHelper.GetPaginationScript());
+                }
+
+                sb.Append("</body></html>");
 
                 return Content(sb.ToString(), "text/html");
             }
@@ -415,9 +432,31 @@ namespace Nskg.Controllers
         }
 
         [HttpGet]
-        public IActionResult GeneratePDF(DateTime? fromDate, DateTime? toDate, string? accode, int? companyId)
+        public IActionResult GeneratePDF(DateTime? fromDate, DateTime? toDate, string? accode, int? companyId, string? format = null)
         {
-            return OnScreenReport(fromDate, toDate, accode, companyId, isPrintView: true);
+            if (format == "print")
+            {
+                return OnScreenReport(fromDate, toDate, accode, companyId, isPrintView: true, isForPdf: false);
+            }
+
+            try
+            {
+                var contentResult = OnScreenReport(fromDate, toDate, accode, companyId, isPrintView: false, isForPdf: true) as ContentResult;
+                if (contentResult != null && !string.IsNullOrEmpty(contentResult.Content) && !contentResult.Content.Contains("No data found"))
+                {
+                    byte[] pdfBytes = Nskg.Helpers.PdfReportHelper.GeneratePdfFromHtml(contentResult.Content, PdfSharpCore.PageSize.A4, PdfSharpCore.PageOrientation.Landscape);
+                    if (pdfBytes != null && pdfBytes.Length > 100)
+                    {
+                        return File(pdfBytes, "application/pdf", $"VehicleList_{DateTime.Now:yyyyMMdd_HHmmss}.pdf", enableRangeProcessing: true);
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[VehicleListReport] PDF generation fallback: {ex.Message}");
+            }
+
+            return OnScreenReport(fromDate, toDate, accode, companyId, isPrintView: true, isForPdf: false);
         }
 
         private string EscapeCsv(string? text)

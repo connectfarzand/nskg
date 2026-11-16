@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Data.SqlClient;
+using System.Diagnostics;
 using System.IO;
 using System.Security.AccessControl;
 using System.Security.Principal;
@@ -32,6 +33,11 @@ namespace Nskg.Controllers
                                .OrderByDescending(f => f.CreationTime)
                                .ToList();
 
+            ViewBag.DatabaseName = GetDatabaseName();
+            ViewBag.TotalBackups = files.Count;
+            long totalBytes = files.Sum(f => f.Length);
+            ViewBag.TotalSpaceUsed = FormatFileSize(totalBytes);
+
             return View(files);
         }
 
@@ -41,9 +47,8 @@ namespace Nskg.Controllers
         {
             try
             {
+                string dbName = GetDatabaseName();
                 string connStr = _configuration.GetConnectionString("DefaultConnection")!;
-                var builder = new SqlConnectionStringBuilder(connStr);
-                string dbName = string.IsNullOrEmpty(builder.InitialCatalog) ? "nskg_live" : builder.InitialCatalog;
 
                 var backupsDir = Path.Combine(_env.ContentRootPath, "Backups");
                 if (!Directory.Exists(backupsDir))
@@ -60,73 +65,93 @@ namespace Nskg.Controllers
                 using (var conn = new SqlConnection(connStr))
                 {
                     await conn.OpenAsync();
-
-                    // Query SQL Server's own default backup directory if available
-                    string? sqlDefaultBackupPath = null;
-                    try
-                    {
-                        using (var cmdPath = new SqlCommand("SELECT CAST(SERVERPROPERTY('InstanceDefaultBackupPath') AS NVARCHAR(512))", conn))
-                        {
-                            var res = await cmdPath.ExecuteScalarAsync();
-                            if (res != null && res != DBNull.Value && !string.IsNullOrWhiteSpace(res.ToString()))
-                            {
-                                sqlDefaultBackupPath = res.ToString();
-                            }
-                        }
-                    }
-                    catch
-                    {
-                        // Ignore query error for default backup path
-                    }
-
                     bool backupSuccess = false;
+                    bool isWindows = OperatingSystem.IsWindows();
 
-                    // 1. First attempt: Direct backup to application Backups directory
-                    try
+                    if (isWindows)
                     {
-                        string sql = $"BACKUP DATABASE [{dbName}] TO DISK = @path WITH INIT, COPY_ONLY;";
+                        // On Windows: Fast compressed backup directly to application Backups directory
+                        string sql = $"BACKUP DATABASE [{dbName}] TO DISK = @path WITH INIT, COPY_ONLY, COMPRESSION, CHECKSUM;";
                         using (var cmd = new SqlCommand(sql, conn))
                         {
-                            cmd.CommandTimeout = 300; // 5 minutes
+                            cmd.CommandTimeout = 300;
                             cmd.Parameters.AddWithValue("@path", fullPath);
                             await cmd.ExecuteNonQueryAsync();
                         }
-                        backupSuccess = true;
+                        backupSuccess = System.IO.File.Exists(fullPath);
                     }
-                    catch (SqlException ex) when (!string.IsNullOrWhiteSpace(sqlDefaultBackupPath) &&
-                                                  (ex.Number == 3201 || ex.Message.Contains("error 5") || ex.Message.IndexOf("access is denied", StringComparison.OrdinalIgnoreCase) >= 0))
+                    else
                     {
-                        // 2. Fallback: Backup to SQL Server default backup directory where SQL Server has guaranteed write rights
-                        string sqlDefaultFullPath = Path.Combine(sqlDefaultBackupPath, fileName);
-                        string sqlFallback = $"BACKUP DATABASE [{dbName}] TO DISK = @path WITH INIT, COPY_ONLY;";
-                        using (var cmdFallback = new SqlCommand(sqlFallback, conn))
+                        // On Linux (where SQL Server runs in Docker container 'sqlserver'):
+                        // 1. Perform high-speed COMPRESSED backup in container default data path
+                        string containerBackupPath = $"/var/opt/mssql/data/{fileName}";
+                        string sql = $"BACKUP DATABASE [{dbName}] TO DISK = @path WITH INIT, COPY_ONLY, COMPRESSION, CHECKSUM;";
+                        using (var cmd = new SqlCommand(sql, conn))
                         {
-                            cmdFallback.CommandTimeout = 300;
-                            cmdFallback.Parameters.AddWithValue("@path", sqlDefaultFullPath);
-                            await cmdFallback.ExecuteNonQueryAsync();
+                            cmd.CommandTimeout = 300;
+                            cmd.Parameters.AddWithValue("@path", containerBackupPath);
+                            await cmd.ExecuteNonQueryAsync();
                         }
 
-                        // Copy or move the generated backup file from SQL directory to web application Backups folder
+                        // 2. Transfer file from Docker container 'sqlserver' to host Backups folder
                         try
                         {
-                            if (System.IO.File.Exists(sqlDefaultFullPath))
+                            var copyProcess = Process.Start(new ProcessStartInfo
                             {
-                                System.IO.File.Copy(sqlDefaultFullPath, fullPath, true);
-                                try { System.IO.File.Delete(sqlDefaultFullPath); } catch { }
-                                backupSuccess = true;
+                                FileName = "docker",
+                                Arguments = $"cp sqlserver:{containerBackupPath} \"{fullPath}\"",
+                                RedirectStandardOutput = true,
+                                RedirectStandardError = true,
+                                UseShellExecute = false
+                            });
+
+                            if (copyProcess != null)
+                            {
+                                await copyProcess.WaitForExitAsync();
+                                if (copyProcess.ExitCode == 0 && System.IO.File.Exists(fullPath))
+                                {
+                                    backupSuccess = true;
+                                    try
+                                    {
+                                        System.IO.File.SetUnixFileMode(fullPath, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.GroupRead | UnixFileMode.OtherRead);
+                                    }
+                                    catch { }
+
+                                    // Remove temp backup inside container to prevent container disk bloat
+                                    var rmProcess = Process.Start(new ProcessStartInfo
+                                    {
+                                        FileName = "docker",
+                                        Arguments = $"exec sqlserver rm -f {containerBackupPath}",
+                                        UseShellExecute = false
+                                    });
+                                    rmProcess?.WaitForExit();
+                                }
                             }
                         }
                         catch
                         {
-                            // If web app cannot copy due to IIS permissions on SQL folder, the file is in sqlDefaultBackupPath
-                            TempData["SuccessMessage"] = $"Backup created in SQL Server default directory: {sqlDefaultFullPath}";
-                            return RedirectToAction(nameof(Index));
+                            // Fallback if docker command cannot be called directly
+                            if (System.IO.File.Exists(containerBackupPath))
+                            {
+                                System.IO.File.Copy(containerBackupPath, fullPath, true);
+                                try { System.IO.File.Delete(containerBackupPath); } catch { }
+                                backupSuccess = true;
+                            }
                         }
                     }
 
                     if (backupSuccess)
                     {
-                        TempData["SuccessMessage"] = $"Backup created successfully: {fileName}";
+                        // Auto-cleanup: keep only latest 10 backups to preserve server disk space
+                        CleanOldBackups(backupsDir, 10);
+
+                        long sizeBytes = new FileInfo(fullPath).Length;
+                        string formatted = FormatFileSize(sizeBytes);
+                        TempData["SuccessMessage"] = $"Optimized backup created successfully: {fileName} ({formatted})";
+                    }
+                    else
+                    {
+                        TempData["ErrorMessage"] = "Backup process completed in SQL Server, but the file could not be transferred to web storage.";
                     }
                 }
             }
@@ -136,6 +161,49 @@ namespace Nskg.Controllers
             }
 
             return RedirectToAction(nameof(Index));
+        }
+
+        private string GetDatabaseName()
+        {
+            try
+            {
+                string connStr = _configuration.GetConnectionString("DefaultConnection")!;
+                var builder = new SqlConnectionStringBuilder(connStr);
+                return string.IsNullOrEmpty(builder.InitialCatalog) ? "nskg_live" : builder.InitialCatalog;
+            }
+            catch
+            {
+                return "nskg_live";
+            }
+        }
+
+        private static string FormatFileSize(long bytes)
+        {
+            if (bytes >= 1024 * 1024 * 1024)
+                return $"{(bytes / (1024.0 * 1024.0 * 1024.0)):F2} GB";
+            if (bytes >= 1024 * 1024)
+                return $"{(bytes / (1024.0 * 1024.0)):F2} MB";
+            if (bytes >= 1024)
+                return $"{(bytes / 1024.0):F2} KB";
+            return $"{bytes} B";
+        }
+
+        private void CleanOldBackups(string backupsDir, int keepCount)
+        {
+            try
+            {
+                var dirInfo = new DirectoryInfo(backupsDir);
+                var oldFiles = dirInfo.GetFiles("*.bak")
+                                      .OrderByDescending(f => f.CreationTime)
+                                      .Skip(keepCount)
+                                      .ToList();
+
+                foreach (var old in oldFiles)
+                {
+                    try { old.Delete(); } catch { }
+                }
+            }
+            catch { }
         }
 
         private void EnsureDirectoryPermissions(string path)
@@ -167,7 +235,6 @@ namespace Nskg.Controllers
                 return BadRequest("Invalid file name.");
             }
 
-            // Security check against directory traversal
             var safeFileName = Path.GetFileName(fileName);
             var backupsDir = Path.Combine(_env.ContentRootPath, "Backups");
             var fullPath = Path.Combine(backupsDir, safeFileName);

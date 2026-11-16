@@ -132,9 +132,14 @@
     <div id="reportCard" class="card shadow border-0" style="display:none;">
         <div class="card-header card-header-brand text-white d-flex justify-content-between align-items-center py-2">
             <h5 class="mb-0 fs-6"><i class="fa fa-file-text-o me-2"></i> Report Preview</h5>
-            <button type="button" class="btn btn-sm btn-outline-light" onclick="$('#reportCard').hide()">
-                <i class="fa fa-times"></i> Close
-            </button>
+            <div class="d-flex align-items-center gap-2">
+                <button type="button" class="btn btn-sm btn-light py-0 px-2 fw-semibold" onclick="printReportFrame()">
+                    <i class="fa fa-print me-1"></i> Print / Save as PDF
+                </button>
+                <button type="button" class="btn btn-sm btn-outline-light py-0 px-2" onclick="$('#reportCard').hide()">
+                    <i class="fa fa-times"></i> Close
+                </button>
+            </div>
         </div>
 
         <!-- LOADER -->
@@ -230,6 +235,16 @@
                 $('#reportLoader').hide();
                 $('#reportFrame').show();
             });
+        }
+
+        function printReportFrame() {
+            var frame = document.getElementById('reportFrame');
+            if (frame && frame.contentWindow) {
+                frame.contentWindow.focus();
+                frame.contentWindow.print();
+            } else {
+                alert("Please view the report first before printing.");
+            }
         }
     </script>
 }

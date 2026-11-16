@@ -397,8 +397,151 @@ namespace Nskg.Controllers
             return dt;
         }
 
+        private string BuildTransporterLedgerHtml(DataTable dt, string? accode, DateTime effFromDate, DateTime effToDate, string? vehicleNo, bool isPrintMode = false, bool isForPdf = false)
+        {
+            string compName = (dt.Rows.Count > 0 ? dt.Rows[0]["CompanyName"]?.ToString() : null) ?? "Company";
+            string accName = (dt.Rows.Count > 0 ? dt.Rows[0]["AccName"]?.ToString() : null) ?? "";
+
+            decimal totalDebit = 0, totalCredit = 0;
+            var sb = new StringBuilder();
+            sb.Append(@"<!DOCTYPE html><html><head><meta charset='utf-8'>
+            <title>Transporter Ledger - " + accode + @"</title>
+            <style>
+                body{font-family:Arial,sans-serif;font-size:12px;margin:12px;color:#333;}
+                .header-box{text-align:center;margin-bottom:12px;}
+                .header-box h2{margin:0 0 4px;color:#0d6efd;font-size:18px;}
+                .header-box h3{margin:0 0 4px;font-size:14px;color:#495057;}
+                .header-box p{margin:0;font-size:11px;color:#6c757d;}
+                table{width:100%;border-collapse:collapse;margin-top:8px;}
+                th{background:#0d6efd;color:#fff;padding:7px 6px;text-align:left;font-size:11px;border:1px solid #0b5ed7;}
+                td{padding:5px 6px;border:1px solid #dee2e6;font-size:11px;}
+                tr:nth-child(even){background:#f8f9fa;}
+                tr:hover{background:#e9ecef;}
+                .num{text-align:right;}
+                .center{text-align:center;}
+                .bold{font-weight:bold;}
+                .op-row{background:#e7f1ff;font-weight:bold;}
+                tfoot tr{background:#d0e2ff;font-weight:bold;}
+                @media print {
+                    .no-print { display: none !important; }
+                    body { margin: 5mm; }
+                }
+            </style>");
+
+            if (!isForPdf)
+            {
+                sb.Append("<style>" + Nskg.Helpers.ReportPaginationHelper.GetPaginationStyles() + "</style>");
+            }
+
+            if (isPrintMode)
+            {
+                sb.Append("<script>window.addEventListener('load', function() { setTimeout(function() { window.print(); }, 300); });</script>");
+            }
+
+            sb.Append("</head><body>");
+
+            if (!isForPdf && !isPrintMode)
+            {
+                sb.Append(Nskg.Helpers.ReportPaginationHelper.GetPaginationToolbarHtml("Transporter Ledger"));
+            }
+
+            sb.Append($"<div class='header-box'>");
+            sb.Append($"<h2>{compName}</h2>");
+            sb.Append($"<h3>TRANSPORTER LEDGER</h3>");
+            string vehicleInfo = string.IsNullOrWhiteSpace(vehicleNo) ? "" : $" &nbsp;|&nbsp; Vehicle: <b>{vehicleNo}</b>";
+            sb.Append($"<div style='display:flex; justify-content:space-between; align-items:center; margin:8px 0 4px 0; padding-bottom:4px; border-bottom:1.5px solid #000;'>");
+            sb.Append($"<div style='font-size:15px; font-weight:bold;'><span style='letter-spacing:1px;'>{accode}</span> &nbsp;&nbsp;&nbsp;&nbsp; <span style='color:#0d6efd;'>{accName}</span></div>");
+            sb.Append($"<div style='font-size:11px; color:#495057;'>Period: <b>{effFromDate:dd-MMM-yyyy}</b> to <b>{effToDate:dd-MMM-yyyy}</b>{vehicleInfo}</div>");
+            sb.Append($"</div>");
+            sb.Append("</div>");
+
+            sb.Append("<table><thead><tr>");
+            sb.Append("<th style='width:75px;'>Doc.Date</th>");
+            sb.Append("<th style='width:75px;'>Doc. #</th>");
+            sb.Append("<th style='width:40px;'>Typ</th>");
+            sb.Append("<th style='width:55px;'>Comm.no</th>");
+            sb.Append("<th style='width:90px;'>Vehicle No</th>");
+            sb.Append("<th>Station</th>");
+            sb.Append("<th>Party name / Item</th>");
+            sb.Append("<th style='width:50px;'>Company</th>");
+            sb.Append("<th class='num' style='width:85px;'>DEBIT</th>");
+            sb.Append("<th class='num' style='width:85px;'>CREDIT</th>");
+            sb.Append("<th class='num' style='width:90px;'>BALANCE</th>");
+            sb.Append("</tr></thead><tbody>");
+
+            foreach (DataRow row in dt.Rows)
+            {
+                int sortOrder = row["SortOrder"] != DBNull.Value ? Convert.ToInt32(row["SortOrder"]) : 1;
+                bool isOpening = sortOrder == 0;
+
+                decimal debit = row["Debit"] != DBNull.Value ? Convert.ToDecimal(row["Debit"]) : 0;
+                decimal credit = row["Credit"] != DBNull.Value ? Convert.ToDecimal(row["Credit"]) : 0;
+                decimal balance = row["Balance"] != DBNull.Value ? Convert.ToDecimal(row["Balance"]) : 0;
+
+                if (!isOpening)
+                {
+                    totalDebit += debit;
+                    totalCredit += credit;
+                }
+
+                string docDate   = row["DocDate"] != DBNull.Value ? Convert.ToDateTime(row["DocDate"]).ToString("dd-MMM-yy") : "";
+                string votype    = row["Votype"]?.ToString() ?? "";
+                string commNo    = row["BillTiNo"] != DBNull.Value && !string.IsNullOrWhiteSpace(row["BillTiNo"].ToString()) ? row["BillTiNo"].ToString() : "";
+                string vehNo     = row["VehicleNo"]?.ToString() ?? "";
+                string station   = row["Station"]?.ToString() ?? "";
+                string iname     = row["IName"] != DBNull.Value ? row["IName"]?.ToString() ?? "" : "";
+                string rowComp   = row["RowCompany"] != DBNull.Value ? row["RowCompany"].ToString() : "";
+                string rowClass  = isOpening ? "class='op-row'" : "";
+
+                if (isOpening)
+                {
+                    sb.Append($"<tr {rowClass}>");
+                    sb.Append("<td></td><td></td><td></td><td></td>");
+                    sb.Append("<td colspan='4' class='bold'>Opening Balance</td>");
+                    sb.Append($"<td class='num'>{(debit != 0 ? debit.ToString("#,##0") : "")}</td>");
+                    sb.Append($"<td class='num'>{(credit != 0 ? credit.ToString("#,##0") : "")}</td>");
+                    sb.Append($"<td class='num bold'>{balance:#,##0}</td>");
+                    sb.Append("</tr>");
+                }
+                else
+                {
+                    sb.Append($"<tr {rowClass}>");
+                    sb.Append($"<td>{docDate}</td>");
+                    sb.Append($"<td>{row["DocNo"]}</td>");
+                    sb.Append($"<td>{votype}</td>");
+                    sb.Append($"<td class='center'>{commNo}</td>");
+                    sb.Append($"<td class='bold'>{vehNo}</td>");
+                    sb.Append($"<td>{station}</td>");
+                    sb.Append($"<td>{iname}</td>");
+                    sb.Append($"<td class='center'>{rowComp}</td>");
+                    sb.Append($"<td class='num'>{(debit != 0 ? debit.ToString("#,##0") : "")}</td>");
+                    sb.Append($"<td class='num'>{(credit != 0 ? credit.ToString("#,##0") : "")}</td>");
+                    sb.Append($"<td class='num bold'>{balance:#,##0}</td>");
+                    sb.Append("</tr>");
+                }
+            }
+
+            decimal closingBal = (dt.Rows.Count > 0 && dt.Rows[dt.Rows.Count - 1]["Balance"] != DBNull.Value) ? Convert.ToDecimal(dt.Rows[dt.Rows.Count - 1]["Balance"]) : 0;
+
+            sb.Append("</tbody><tfoot><tr>");
+            sb.Append($"<td colspan='8' class='bold' style='text-align:right;'>GRAND TOTAL............</td>");
+            sb.Append($"<td class='num bold'>{totalDebit:#,##0}</td>");
+            sb.Append($"<td class='num bold'>{totalCredit:#,##0}</td>");
+            sb.Append($"<td class='num bold'>{closingBal:#,##0}</td>");
+            sb.Append("</tr></tfoot></table>");
+
+            if (!isForPdf && !isPrintMode)
+            {
+                sb.Append(Nskg.Helpers.ReportPaginationHelper.GetPaginationScript());
+            }
+
+            sb.Append("</body></html>");
+
+            return sb.ToString();
+        }
+
         [HttpGet]
-        public IActionResult GeneratePDF(string? accode, DateTime? fromDate, DateTime? toDate, string? vehicleNo, int? companyId)
+        public IActionResult GeneratePDF(string? accode, DateTime? fromDate, DateTime? toDate, string? vehicleNo, int? companyId, string? format = null)
         {
             int selectedCompanyId = GetCompanyId(companyId);
             int financialYearId = GetFinancialYearId();
@@ -411,38 +554,38 @@ namespace Nskg.Controllers
 
                 if (dt == null || dt.Rows.Count == 0)
                 {
-                    return Content("No data found for selected date range and transporter account.");
+                    return Content("<div style='font-family:Arial; padding:30px; text-align:center; color:#721c24; background-color:#f8d7da; border:1px solid #f5c6cb; border-radius:6px; margin:20px;'><strong>No data found for selected date range and transporter account.</strong></div>", "text/html");
                 }
 
-                string reportPath = Path.Combine(_env.WebRootPath, "Reports", "TransporterLedgerrpt.rdlc");
+                string html = BuildTransporterLedgerHtml(dt, accode, effFromDate, effToDate, vehicleNo, isPrintMode: format == "print", isForPdf: format != "print");
 
-                if (!System.IO.File.Exists(reportPath))
+                if (format == "print")
                 {
-                    return Content($"Report file not found: {reportPath}");
+                    return Content(html, "text/html");
                 }
 
-                using (LocalReport report = new LocalReport())
+                byte[] pdfBytes = Nskg.Helpers.PdfReportHelper.GeneratePdfFromHtml(html, PdfSharpCore.PageSize.A4, PdfSharpCore.PageOrientation.Landscape);
+
+                if (pdfBytes == null || pdfBytes.Length < 100)
                 {
-                    report.ReportPath = reportPath;
-                    report.DataSources.Clear();
-
-                    dt.TableName = "DSTransporterLedger";
-                    report.DataSources.Add(new ReportDataSource("DSTransporterLedger", dt));
-
-                    byte[] pdfBytes = report.Render("PDF");
-
-                    if (pdfBytes == null || pdfBytes.Length < 100)
-                    {
-                        return Content("PDF generation failed or corrupted output.");
-                    }
-
-                    string label = !string.IsNullOrWhiteSpace(accode) ? accode : (!string.IsNullOrWhiteSpace(vehicleNo) ? $"Vehicle_{vehicleNo.Trim()}" : "TransporterLedger");
-                    return File(pdfBytes, "application/pdf", $"TransporterLedger_{label}_{effFromDate:yyyyMMdd}_{effToDate:yyyyMMdd}.pdf", enableRangeProcessing: true);
+                    return Content(BuildTransporterLedgerHtml(dt, accode, effFromDate, effToDate, vehicleNo, isPrintMode: true, isForPdf: false), "text/html");
                 }
+
+                string label = !string.IsNullOrWhiteSpace(accode) ? accode : (!string.IsNullOrWhiteSpace(vehicleNo) ? $"Vehicle_{vehicleNo.Trim()}" : "TransporterLedger");
+                return File(pdfBytes, "application/pdf", $"TransporterLedger_{label}_{effFromDate:yyyyMMdd}_{effToDate:yyyyMMdd}.pdf", enableRangeProcessing: true);
             }
             catch (Exception ex)
             {
-                return Content($"ERROR: {ex.Message}\n\nSTACK: {ex.StackTrace}");
+                Console.WriteLine($"[TransporterLedgerReport] GeneratePDF exception: {ex.Message}. Falling back to print HTML.");
+                try
+                {
+                    DataTable dt = GetTransporterLedger(accode ?? "", effFromDate, effToDate, vehicleNo ?? "", selectedCompanyId, financialYearId);
+                    return Content(BuildTransporterLedgerHtml(dt, accode, effFromDate, effToDate, vehicleNo, isPrintMode: true, isForPdf: false), "text/html");
+                }
+                catch
+                {
+                    return Content($"ERROR: {ex.Message}\n\nSTACK: {ex.StackTrace}");
+                }
             }
         }
 
@@ -463,121 +606,8 @@ namespace Nskg.Controllers
                     return Content("<div style='font-family:Arial; padding:30px; text-align:center; color:#721c24; background-color:#f8d7da; border:1px solid #f5c6cb; border-radius:6px; margin:20px;'><strong>No data found for selected date range and transporter account.</strong></div>", "text/html");
                 }
 
-                string compName = (dt.Rows.Count > 0 ? dt.Rows[0]["CompanyName"]?.ToString() : null) ?? "Company";
-                string accName = (dt.Rows.Count > 0 ? dt.Rows[0]["AccName"]?.ToString() : null) ?? "";
-
-                decimal totalDebit = 0, totalCredit = 0;
-                var sb = new StringBuilder();
-                sb.Append(@"<!DOCTYPE html><html><head><meta charset='utf-8'>
-                <style>
-                    body{font-family:Arial,sans-serif;font-size:12px;margin:12px;color:#333;}
-                    .header-box{text-align:center;margin-bottom:12px;}
-                    .header-box h2{margin:0 0 4px;color:#0d6efd;font-size:18px;}
-                    .header-box h3{margin:0 0 4px;font-size:14px;color:#495057;}
-                    .header-box p{margin:0;font-size:11px;color:#6c757d;}
-                    table{width:100%;border-collapse:collapse;margin-top:8px;}
-                    th{background:#0d6efd;color:#fff;padding:7px 6px;text-align:left;font-size:11px;border:1px solid #0b5ed7;}
-                    td{padding:5px 6px;border:1px solid #dee2e6;font-size:11px;}
-                    tr:nth-child(even){background:#f8f9fa;}
-                    tr:hover{background:#e9ecef;}
-                    .num{text-align:right;}
-                    .center{text-align:center;}
-                    .bold{font-weight:bold;}
-                    .op-row{background:#e7f1ff;font-weight:bold;}
-                    tfoot tr{background:#d0e2ff;font-weight:bold;}
-                    " + Nskg.Helpers.ReportPaginationHelper.GetPaginationStyles() + @"
-                </style></head><body>");
-
-                sb.Append(Nskg.Helpers.ReportPaginationHelper.GetPaginationToolbarHtml("Transporter Ledger"));
-                sb.Append($"<div class='header-box'>");
-                sb.Append($"<h2>{compName}</h2>");
-                sb.Append($"<h3>TRANSPORTER LEDGER</h3>");
-                string vehicleInfo = string.IsNullOrWhiteSpace(vehicleNo) ? "" : $" &nbsp;|&nbsp; Vehicle: <b>{vehicleNo}</b>";
-                sb.Append($"<div style='display:flex; justify-content:space-between; align-items:center; margin:8px 0 4px 0; padding-bottom:4px; border-bottom:1.5px solid #000;'>");
-                sb.Append($"<div style='font-size:15px; font-weight:bold;'><span style='letter-spacing:1px;'>{accode}</span> &nbsp;&nbsp;&nbsp;&nbsp; <span style='color:#0d6efd;'>{accName}</span></div>");
-                sb.Append($"<div style='font-size:11px; color:#495057;'>Period: <b>{effFromDate:dd-MMM-yyyy}</b> to <b>{effToDate:dd-MMM-yyyy}</b>{vehicleInfo}</div>");
-                sb.Append($"</div>");
-                sb.Append("</div>");
-
-                // Columns exactly matching old software
-                sb.Append("<table><thead><tr>");
-                sb.Append("<th style='width:75px;'>Doc.Date</th>");
-                sb.Append("<th style='width:75px;'>Doc. #</th>");
-                sb.Append("<th style='width:40px;'>Typ</th>");
-                sb.Append("<th style='width:55px;'>Comm.no</th>");
-                sb.Append("<th style='width:90px;'>Vehicle No</th>");
-                sb.Append("<th>Station</th>");
-                sb.Append("<th>Party name / Item</th>");
-                sb.Append("<th style='width:50px;'>Company</th>");
-                sb.Append("<th class='num' style='width:85px;'>DEBIT</th>");
-                sb.Append("<th class='num' style='width:85px;'>CREDIT</th>");
-                sb.Append("<th class='num' style='width:90px;'>BALANCE</th>");
-                sb.Append("</tr></thead><tbody>");
-
-                foreach (DataRow row in dt.Rows)
-                {
-                    int sortOrder = row["SortOrder"] != DBNull.Value ? Convert.ToInt32(row["SortOrder"]) : 1;
-                    bool isOpening = sortOrder == 0;
-
-                    decimal debit = row["Debit"] != DBNull.Value ? Convert.ToDecimal(row["Debit"]) : 0;
-                    decimal credit = row["Credit"] != DBNull.Value ? Convert.ToDecimal(row["Credit"]) : 0;
-                    decimal balance = row["Balance"] != DBNull.Value ? Convert.ToDecimal(row["Balance"]) : 0;
-
-                    if (!isOpening)
-                    {
-                        totalDebit += debit;
-                        totalCredit += credit;
-                    }
-
-                    string docDate   = row["DocDate"] != DBNull.Value ? Convert.ToDateTime(row["DocDate"]).ToString("dd-MMM-yy") : "";
-                    string votype    = row["Votype"]?.ToString() ?? "";
-                    string commNo    = row["BillTiNo"] != DBNull.Value && !string.IsNullOrWhiteSpace(row["BillTiNo"].ToString()) ? row["BillTiNo"].ToString() : "";
-                    string vehNo     = row["VehicleNo"]?.ToString() ?? "";
-                    string station   = row["Station"]?.ToString() ?? "";
-                    string iname     = row["IName"] != DBNull.Value ? row["IName"]?.ToString() ?? "" : "";
-                    string rowComp   = row["RowCompany"] != DBNull.Value ? row["RowCompany"].ToString() : "";
-                    string rowClass  = isOpening ? "class='op-row'" : "";
-
-                    if (isOpening)
-                    {
-                        sb.Append($"<tr {rowClass}>");
-                        sb.Append("<td></td><td></td><td></td><td></td>");
-                        sb.Append("<td colspan='4' class='bold'>Opening Balance</td>");
-                        sb.Append($"<td class='num'>{(debit != 0 ? debit.ToString("#,##0") : "")}</td>");
-                        sb.Append($"<td class='num'>{(credit != 0 ? credit.ToString("#,##0") : "")}</td>");
-                        sb.Append($"<td class='num bold'>{balance:#,##0}</td>");
-                        sb.Append("</tr>");
-                    }
-                    else
-                    {
-                        sb.Append($"<tr {rowClass}>");
-                        sb.Append($"<td>{docDate}</td>");
-                        sb.Append($"<td>{row["DocNo"]}</td>");
-                        sb.Append($"<td>{votype}</td>");
-                        sb.Append($"<td class='center'>{commNo}</td>");
-                        sb.Append($"<td class='bold'>{vehNo}</td>");
-                        sb.Append($"<td>{station}</td>");
-                        sb.Append($"<td>{iname}</td>");
-                        sb.Append($"<td class='center'>{rowComp}</td>");
-                        sb.Append($"<td class='num'>{(debit != 0 ? debit.ToString("#,##0") : "")}</td>");
-                        sb.Append($"<td class='num'>{(credit != 0 ? credit.ToString("#,##0") : "")}</td>");
-                        sb.Append($"<td class='num bold'>{balance:#,##0}</td>");
-                        sb.Append("</tr>");
-                    }
-                }
-
-                decimal closingBal = (dt.Rows.Count > 0 && dt.Rows[dt.Rows.Count - 1]["Balance"] != DBNull.Value) ? Convert.ToDecimal(dt.Rows[dt.Rows.Count - 1]["Balance"]) : 0;
-
-                sb.Append("</tbody><tfoot><tr>");
-                sb.Append($"<td colspan='8' class='bold' style='text-align:right;'>GRAND TOTAL............</td>");
-                sb.Append($"<td class='num bold'>{totalDebit:#,##0}</td>");
-                sb.Append($"<td class='num bold'>{totalCredit:#,##0}</td>");
-                sb.Append($"<td class='num bold'>{closingBal:#,##0}</td>");
-                sb.Append("</tr></tfoot></table>");
-                sb.Append(Nskg.Helpers.ReportPaginationHelper.GetPaginationScript());
-                sb.Append("</body></html>");
-
-                return Content(sb.ToString(), "text/html");
+                string html = BuildTransporterLedgerHtml(dt, accode, effFromDate, effToDate, vehicleNo, isPrintMode: false, isForPdf: false);
+                return Content(html, "text/html");
             }
             catch (Exception ex)
             {

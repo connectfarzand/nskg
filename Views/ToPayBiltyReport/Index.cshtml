@@ -212,5 +212,13 @@
                 $('#reportFrame').show();
             });
         }
+
+        function printReportFrame() {
+            var frame = document.getElementById('reportFrame');
+            if (frame && frame.contentWindow) {
+                frame.contentWindow.focus();
+                frame.contentWindow.print();
+            }
+        }
     </script>
 }

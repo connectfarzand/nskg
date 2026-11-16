@@ -59,8 +59,8 @@ builder.Services.AddAntiforgery(options =>
 {
     options.Cookie.SecurePolicy = CookieSecurePolicy.SameAsRequest;
     options.Cookie.SameSite = SameSiteMode.Lax;
+    options.HeaderName = "RequestVerificationToken";
 });
-
 // Add services to the container.
 builder.Services.AddControllersWithViews();
 

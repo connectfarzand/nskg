@@ -263,5 +263,13 @@
                 $('#reportLoader').hide();
             }, 2500);
         }
+
+        function printReportFrame() {
+            var frame = document.getElementById('reportFrame');
+            if (frame && frame.contentWindow) {
+                frame.contentWindow.focus();
+                frame.contentWindow.print();
+            }
+        }
     </script>
 }

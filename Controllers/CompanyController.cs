@@ -137,7 +137,7 @@ namespace Nskg.Controllers
         }
 
         // ✅ SOFT DELETE (AJAX)
-        [HttpDelete]
+        [HttpPost, HttpDelete]
         [ValidateAntiForgeryToken]
         public async Task<IActionResult> Delete(int id)
         {

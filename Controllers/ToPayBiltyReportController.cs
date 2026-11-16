@@ -139,8 +139,121 @@ namespace Nskg.Controllers
             return dt;
         }
 
+        private string BuildToPayBiltyHtml(DataTable dt, DateTime? fromDate, DateTime? toDate, decimal? fromBilNo, decimal? toBilNo, decimal? fromBiltyNo, decimal? toBiltyNo, bool isPrintMode = false, bool isForPdf = false)
+        {
+            string compName = (dt.Rows.Count > 0 ? dt.Rows[0]["CompanyName"]?.ToString() : null) ?? "Company";
+            decimal totQty = 0, totFreight = 0, totBalance = 0;
+
+            var sb = new StringBuilder();
+            sb.Append(@"<!DOCTYPE html><html><head><meta charset='utf-8'>
+            <title>To Pay Bilty Report</title>
+            <style>
+                body{font-family:Arial,sans-serif;font-size:12px;margin:12px;color:#333;}
+                .header-box{text-align:center;margin-bottom:12px;}
+                .header-box h2{margin:0 0 4px;color:#0d6efd;font-size:18px;}
+                .header-box h3{margin:0 0 4px;font-size:14px;color:#495057;}
+                .header-box p{margin:0;font-size:11px;color:#6c757d;}
+                table{width:100%;border-collapse:collapse;margin-top:8px;}
+                th{background:#0d6efd;color:#fff;padding:7px 6px;text-align:left;font-size:11px;border:1px solid #0b5ed7;}
+                td{padding:5px 6px;border:1px solid #dee2e6;font-size:11px;}
+                tr:nth-child(even){background:#f8f9fa;}
+                tr:hover{background:#e9ecef;}
+                .num{text-align:right;}
+                .center{text-align:center;}
+                .bold{font-weight:bold;}
+                tfoot tr{background:#d0e2ff;font-weight:bold;}
+                @media print {
+                    .no-print { display: none !important; }
+                    body { margin: 5mm; }
+                }
+            </style>");
+
+            if (!isForPdf)
+            {
+                sb.Append("<style>" + Nskg.Helpers.ReportPaginationHelper.GetPaginationStyles() + "</style>");
+            }
+
+            if (isPrintMode)
+            {
+                sb.Append("<script>window.addEventListener('load', function() { setTimeout(function() { window.print(); }, 300); });</script>");
+            }
+
+            sb.Append("</head><body>");
+
+            if (!isForPdf && !isPrintMode)
+            {
+                sb.Append(Nskg.Helpers.ReportPaginationHelper.GetPaginationToolbarHtml("To Pay Bilty Report"));
+            }
+
+            sb.Append($"<div class='header-box'>");
+            sb.Append($"<h2>{compName}</h2>");
+            sb.Append($"<h3>TO PAY BILTY REPORT</h3>");
+
+            string filterText = "";
+            if (fromDate.HasValue && toDate.HasValue) filterText += $"Date: <b>{fromDate.Value:dd-MMM-yyyy}</b> to <b>{toDate.Value:dd-MMM-yyyy}</b> ";
+            if (fromBilNo.HasValue && fromBilNo > 0) filterText += $" | Bill No: <b>{fromBilNo} - {toBilNo}</b> ";
+            if (fromBiltyNo.HasValue && fromBiltyNo > 0) filterText += $" | Bilty No: <b>{fromBiltyNo} - {toBiltyNo}</b>";
+            if (string.IsNullOrEmpty(filterText)) filterText = "All Records";
+            sb.Append($"<p>{filterText}</p>");
+            sb.Append("</div>");
+
+            sb.Append("<table><thead><tr>");
+            sb.Append("<th style='width:35px;' class='center'>#</th>");
+            sb.Append("<th style='width:70px;'>Bill No</th>");
+            sb.Append("<th style='width:75px;'>Bilty No</th>");
+            sb.Append("<th style='width:80px;'>Date</th>");
+            sb.Append("<th>Station</th>");
+            sb.Append("<th>Party Name</th>");
+            sb.Append("<th class='num' style='width:60px;'>Qty</th>");
+            sb.Append("<th class='num' style='width:90px;'>Freight</th>");
+            sb.Append("<th class='num' style='width:95px;'>Balance</th>");
+            sb.Append("</tr></thead><tbody>");
+
+            int sr = 1;
+            foreach (DataRow row in dt.Rows)
+            {
+                decimal qty = row["Qty"] != DBNull.Value ? Convert.ToDecimal(row["Qty"]) : 0;
+                decimal freight = row["Freight"] != DBNull.Value ? Convert.ToDecimal(row["Freight"]) : 0;
+                decimal balance = row["Balance"] != DBNull.Value ? Convert.ToDecimal(row["Balance"]) : 0;
+
+                totQty += qty;
+                totFreight += freight;
+                totBalance += balance;
+
+                string docDate = row["DocDate"] != DBNull.Value ? Convert.ToDateTime(row["DocDate"]).ToString("dd-MMM-yy") : "";
+
+                sb.Append("<tr>");
+                sb.Append($"<td class='center'>{sr++}</td>");
+                sb.Append($"<td class='bold'>{row["BilNo"]}</td>");
+                sb.Append($"<td>{row["BillTiNo"]}</td>");
+                sb.Append($"<td>{docDate}</td>");
+                sb.Append($"<td>{row["Station"]}</td>");
+                sb.Append($"<td>{row["PartyName"]}</td>");
+                sb.Append($"<td class='num'>{(qty != 0 ? qty.ToString("#,##0") : "")}</td>");
+                sb.Append($"<td class='num'>{(freight != 0 ? freight.ToString("#,##0.00") : "")}</td>");
+                sb.Append($"<td class='num bold'>{balance:#,##0.00}</td>");
+                sb.Append("</tr>");
+            }
+
+            sb.Append("</tbody><tfoot><tr>");
+            sb.Append($"<td colspan='6' class='bold' style='text-align:right;'>TOTAL:</td>");
+            sb.Append($"<td class='num bold'>{totQty:#,##0}</td>");
+            sb.Append($"<td class='num bold'>{totFreight:#,##0.00}</td>");
+            sb.Append($"<td class='num bold'>{totBalance:#,##0.00}</td>");
+            sb.Append("</tr></tfoot></table>");
+
+            if (!isForPdf && !isPrintMode)
+            {
+                sb.Append(Nskg.Helpers.ReportPaginationHelper.GetPaginationScript());
+            }
+
+            sb.Append("</body></html>");
+
+            return sb.ToString();
+        }
+
         [HttpGet]
-        public IActionResult GeneratePDF(DateTime? fromDate, DateTime? toDate, decimal? fromBilNo, decimal? toBilNo, decimal? fromBiltyNo, decimal? toBiltyNo, int? companyId)
+        public IActionResult GeneratePDF(DateTime? fromDate, DateTime? toDate, decimal? fromBilNo, decimal? toBilNo, decimal? fromBiltyNo, decimal? toBiltyNo, int? companyId, string? format = null)
         {
             int selectedCompanyId = GetCompanyId(companyId);
             int financialYearId = GetFinancialYearId();
@@ -150,32 +263,37 @@ namespace Nskg.Controllers
                 DataTable dt = GetToPayBiltyList(fromDate, toDate, fromBilNo, toBilNo, fromBiltyNo, toBiltyNo, selectedCompanyId, financialYearId);
 
                 if (dt == null || dt.Rows.Count == 0)
-                    return Content("No data found for the selected filter criteria.");
+                    return Content("<div style='font-family:Arial; padding:30px; text-align:center; color:#721c24; background-color:#f8d7da; border:1px solid #f5c6cb; border-radius:6px; margin:20px;'><strong>No data found for the selected filter criteria.</strong></div>", "text/html");
 
-                string reportPath = Path.Combine(_env.WebRootPath, "Reports", "BiltyListrpt.rdlc");
+                string html = BuildToPayBiltyHtml(dt, fromDate, toDate, fromBilNo, toBilNo, fromBiltyNo, toBiltyNo, isPrintMode: format == "print", isForPdf: format != "print");
 
-                if (!System.IO.File.Exists(reportPath))
-                    return Content($"Report definition file not found: {reportPath}");
-
-                using (LocalReport report = new LocalReport())
+                if (format == "print")
                 {
-                    report.ReportPath = reportPath;
-                    report.DataSources.Clear();
-                    dt.TableName = "DSBiltyList";
-                    report.DataSources.Add(new ReportDataSource("DSBiltyList", dt));
-
-                    byte[] pdfBytes = report.Render("PDF");
-
-                    if (pdfBytes == null || pdfBytes.Length < 100)
-                        return Content("PDF generation failed or returned empty output.");
-
-                    string fileName = $"ToPayBiltyList_{DateTime.Now:yyyyMMdd_HHmmss}.pdf";
-                    return File(pdfBytes, "application/pdf", fileName, enableRangeProcessing: true);
+                    return Content(html, "text/html");
                 }
+
+                byte[] pdfBytes = Nskg.Helpers.PdfReportHelper.GeneratePdfFromHtml(html, PdfSharpCore.PageSize.A4, PdfSharpCore.PageOrientation.Portrait);
+
+                if (pdfBytes == null || pdfBytes.Length < 100)
+                {
+                    return Content(BuildToPayBiltyHtml(dt, fromDate, toDate, fromBilNo, toBilNo, fromBiltyNo, toBiltyNo, isPrintMode: true, isForPdf: false), "text/html");
+                }
+
+                string fileName = $"ToPayBiltyList_{DateTime.Now:yyyyMMdd_HHmmss}.pdf";
+                return File(pdfBytes, "application/pdf", fileName, enableRangeProcessing: true);
             }
             catch (Exception ex)
             {
-                return Content($"ERROR: {ex.Message}\n\nSTACK: {ex.StackTrace}");
+                Console.WriteLine($"[ToPayBiltyReport] GeneratePDF exception: {ex.Message}. Falling back to print HTML.");
+                try
+                {
+                    DataTable dt = GetToPayBiltyList(fromDate, toDate, fromBilNo, toBilNo, fromBiltyNo, toBiltyNo, selectedCompanyId, financialYearId);
+                    return Content(BuildToPayBiltyHtml(dt, fromDate, toDate, fromBilNo, toBilNo, fromBiltyNo, toBiltyNo, isPrintMode: true, isForPdf: false), "text/html");
+                }
+                catch
+                {
+                    return Content($"ERROR: {ex.Message}\n\nSTACK: {ex.StackTrace}");
+                }
             }
         }
 
@@ -192,86 +310,8 @@ namespace Nskg.Controllers
                 if (dt == null || dt.Rows.Count == 0)
                     return Content("<div style='font-family:Arial; padding:30px; text-align:center; color:#721c24; background-color:#f8d7da; border:1px solid #f5c6cb; border-radius:6px; margin:20px;'><strong>No data found for the selected filter criteria.</strong></div>", "text/html");
 
-                string compName = (dt.Rows.Count > 0 ? dt.Rows[0]["CompanyName"]?.ToString() : null) ?? "Company";
-                decimal totQty = 0, totFreight = 0, totBalance = 0;
-
-                var sb = new StringBuilder();
-                sb.Append(@"<!DOCTYPE html><html><head><meta charset='utf-8'>
-                <style>
-                    body{font-family:Arial,sans-serif;font-size:12px;margin:12px;color:#333;}
-                    .header-box{text-align:center;margin-bottom:12px;}
-                    .header-box h2{margin:0 0 4px;color:#0d6efd;font-size:18px;}
-                    .header-box h3{margin:0 0 4px;font-size:14px;color:#495057;}
-                    .header-box p{margin:0;font-size:11px;color:#6c757d;}
-                    table{width:100%;border-collapse:collapse;margin-top:8px;}
-                    th{background:#0d6efd;color:#fff;padding:7px 6px;text-align:left;font-size:11px;border:1px solid #0b5ed7;}
-                    td{padding:5px 6px;border:1px solid #dee2e6;font-size:11px;}
-                    tr:nth-child(even){background:#f8f9fa;}
-                    tr:hover{background:#e9ecef;}
-                    .num{text-align:right;}
-                    .center{text-align:center;}
-                    .bold{font-weight:bold;}
-                    tfoot tr{background:#d0e2ff;font-weight:bold;}
-                </style></head><body>");
-
-                sb.Append($"<div class='header-box'>");
-                sb.Append($"<h2>{compName}</h2>");
-                sb.Append($"<h3>TO PAY BILTY REPORT</h3>");
-
-                string filterText = "";
-                if (fromDate.HasValue && toDate.HasValue) filterText += $"Date: <b>{fromDate.Value:dd-MMM-yyyy}</b> to <b>{toDate.Value:dd-MMM-yyyy}</b> ";
-                if (fromBilNo.HasValue && fromBilNo > 0) filterText += $" | Bill No: <b>{fromBilNo} - {toBilNo}</b> ";
-                if (fromBiltyNo.HasValue && fromBiltyNo > 0) filterText += $" | Bilty No: <b>{fromBiltyNo} - {toBiltyNo}</b>";
-                if (string.IsNullOrEmpty(filterText)) filterText = "All Records";
-                sb.Append($"<p>{filterText}</p>");
-                sb.Append("</div>");
-
-                sb.Append("<table><thead><tr>");
-                sb.Append("<th style='width:35px;' class='center'>#</th>");
-                sb.Append("<th style='width:70px;'>Bill No</th>");
-                sb.Append("<th style='width:75px;'>Bilty No</th>");
-                sb.Append("<th style='width:80px;'>Date</th>");
-                sb.Append("<th>Station</th>");
-                sb.Append("<th>Party Name</th>");
-                sb.Append("<th class='num' style='width:60px;'>Qty</th>");
-                sb.Append("<th class='num' style='width:90px;'>Freight</th>");
-                sb.Append("<th class='num' style='width:95px;'>Balance</th>");
-                sb.Append("</tr></thead><tbody>");
-
-                int sr = 1;
-                foreach (DataRow row in dt.Rows)
-                {
-                    decimal qty = row["Qty"] != DBNull.Value ? Convert.ToDecimal(row["Qty"]) : 0;
-                    decimal freight = row["Freight"] != DBNull.Value ? Convert.ToDecimal(row["Freight"]) : 0;
-                    decimal balance = row["Balance"] != DBNull.Value ? Convert.ToDecimal(row["Balance"]) : 0;
-
-                    totQty += qty;
-                    totFreight += freight;
-                    totBalance += balance;
-
-                    string docDate = row["DocDate"] != DBNull.Value ? Convert.ToDateTime(row["DocDate"]).ToString("dd-MMM-yy") : "";
-
-                    sb.Append("<tr>");
-                    sb.Append($"<td class='center'>{sr++}</td>");
-                    sb.Append($"<td class='bold'>{row["BilNo"]}</td>");
-                    sb.Append($"<td>{row["BillTiNo"]}</td>");
-                    sb.Append($"<td>{docDate}</td>");
-                    sb.Append($"<td>{row["Station"]}</td>");
-                    sb.Append($"<td>{row["PartyName"]}</td>");
-                    sb.Append($"<td class='num'>{(qty != 0 ? qty.ToString("#,##0") : "")}</td>");
-                    sb.Append($"<td class='num'>{(freight != 0 ? freight.ToString("#,##0.00") : "")}</td>");
-                    sb.Append($"<td class='num bold'>{balance:#,##0.00}</td>");
-                    sb.Append("</tr>");
-                }
-
-                sb.Append("</tbody><tfoot><tr>");
-                sb.Append($"<td colspan='6' class='bold' style='text-align:right;'>TOTAL:</td>");
-                sb.Append($"<td class='num bold'>{totQty:#,##0}</td>");
-                sb.Append($"<td class='num bold'>{totFreight:#,##0.00}</td>");
-                sb.Append($"<td class='num bold'>{totBalance:#,##0.00}</td>");
-                sb.Append("</tr></tfoot></table></body></html>");
-
-                return Content(sb.ToString(), "text/html");
+                string html = BuildToPayBiltyHtml(dt, fromDate, toDate, fromBilNo, toBilNo, fromBiltyNo, toBiltyNo, isPrintMode: false, isForPdf: false);
+                return Content(html, "text/html");
             }
             catch (Exception ex)
             {

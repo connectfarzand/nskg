@@ -401,7 +401,23 @@ namespace Nskg.Controllers
                 sbPdf.Append("</tr>");
                 sbPdf.Append("</tbody></table></body></html>");
 
-                return Content(sbPdf.ToString(), "text/html");
+                string html = sbPdf.ToString();
+                try
+                {
+                    byte[] pdfBytes = Nskg.Helpers.PdfReportHelper.GeneratePdfFromHtml(html, PdfSharpCore.PageSize.A4, PdfSharpCore.PageOrientation.Landscape);
+                    if (pdfBytes != null && pdfBytes.Length > 100)
+                    {
+                        string fileName = $"ChallanReport_{DateTime.Now:yyyyMMdd_HHmmss}.pdf";
+                        return File(pdfBytes, "application/pdf", fileName, enableRangeProcessing: true);
+                    }
+                }
+                catch (Exception exPdf)
+                {
+                    Console.WriteLine($"[CommReport] PDF generation fallback: {exPdf.Message}");
+                }
+
+                html = Nskg.Helpers.PdfReportHelper.WrapPrintableHtml(html, autoPrint: true);
+                return Content(html, "text/html");
             }
             catch (Exception ex)
             {
@@ -444,6 +460,7 @@ namespace Nskg.Controllers
                     sbList.Append("tfoot tr{background:#e9ecef;font-weight:bold;}");
                     sbList.Append(".num{text-align:right;}.center{text-align:center;}.bold{font-weight:bold;}");
                     sbList.Append("@media print{.no-print{display:none;}body{margin:0;}}");
+                    sbList.Append(Nskg.Helpers.ReportPaginationHelper.GetPaginationStyles());
                     sbList.Append("</style>");
 
                     if (isPrintView)
@@ -452,6 +469,12 @@ namespace Nskg.Controllers
                     }
 
                     sbList.Append("</head><body>");
+
+                    if (!isPrintView)
+                    {
+                        sbList.Append(Nskg.Helpers.ReportPaginationHelper.GetPaginationToolbarHtml("Challans"));
+                    }
+
                     sbList.Append("<div class='title-container'><span class='title-badge'>Challans</span></div>");
 
                     string pchalText = !string.IsNullOrWhiteSpace(pchalno) ? $" &nbsp;|&nbsp; Chal#: <b>{pchalno}</b>" : "";
@@ -497,7 +520,14 @@ namespace Nskg.Controllers
                     sbList.Append("<td colspan='8' style='text-align:right;' class='bold'>TOTAL:</td>");
                     sbList.Append($"<td class='num bold'>{grandTotAmt:#,##0}</td>");
                     sbList.Append("<td></td>");
-                    sbList.Append("</tr></tfoot></table></body></html>");
+                    sbList.Append("</tr></tfoot></table>");
+
+                    if (!isPrintView)
+                    {
+                        sbList.Append(Nskg.Helpers.ReportPaginationHelper.GetPaginationScript());
+                    }
+
+                    sbList.Append("</body></html>");
 
                     return Content(sbList.ToString(), "text/html");
                 }
@@ -549,7 +579,13 @@ namespace Nskg.Controllers
                 sb.Append("tfoot tr{background:#f0f0f0;font-weight:bold;}");
                 sb.Append(".num{text-align:right;}.center{text-align:center;}.bold{font-weight:bold;}");
                 sb.Append("@media print{.no-print{display:none;}body{margin:5mm;}th,td{border:1px solid #000;}}");
+                sb.Append(Nskg.Helpers.ReportPaginationHelper.GetPaginationStyles());
                 sb.Append("</style></head><body>");
+
+                if (!isPrintView)
+                {
+                    sb.Append(Nskg.Helpers.ReportPaginationHelper.GetPaginationToolbarHtml("Challan Report"));
+                }
 
                 sb.Append("<div class='header-box'>");
                 sb.Append("<h2>Challan report</h2>");
@@ -633,7 +669,14 @@ namespace Nskg.Controllers
                 sb.Append("<td></td>");
                 sb.Append($"<td class='num bold'>{(grandOtherExp != 0 ? grandOtherExp.ToString("#,##0") : "")}</td>");
                 sb.Append($"<td class='num bold'>{grandNet:#,##0}</td>");
-                sb.Append("</tr></tfoot></table></body></html>");
+                sb.Append("</tr></tfoot></table>");
+
+                if (!isPrintView)
+                {
+                    sb.Append(Nskg.Helpers.ReportPaginationHelper.GetPaginationScript());
+                }
+
+                sb.Append("</body></html>");
 
                 return Content(sb.ToString(), "text/html");
             }

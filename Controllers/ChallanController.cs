@@ -339,10 +339,55 @@ namespace Nskg.Controllers
                 model.Head.FyId = User.GetFinancialYearId();
                 model.Head.CoCode = User.GetCompanyCode();
 
-                if (string.IsNullOrWhiteSpace(model.Head.DocNo) ||
-                    _context.ChallanHead.Any(x => !x.IsDeleted && x.CompanyId == model.Head.CompanyId && x.DocNo == model.Head.DocNo))
+                string currentUser = User.Identity?.Name ?? string.Empty;
+
+                // Anti-Double Submit / Duplicate Check 1: DocNo
+                if (!string.IsNullOrWhiteSpace(model.Head.DocNo))
+                {
+                    var existingChallan = _context.ChallanHead.FirstOrDefault(x => !x.IsDeleted && x.CompanyId == model.Head.CompanyId && x.DocNo == model.Head.DocNo);
+                    if (existingChallan != null)
+                    {
+                        if ((existingChallan.CreatedBy == currentUser || string.IsNullOrEmpty(currentUser))
+                            && existingChallan.CreatedOn >= DateTime.Now.AddSeconds(-120))
+                        {
+                            TempData["SuccessMessage"] = $"✅ Challan {existingChallan.DocNo} was already saved.";
+                            return RedirectToAction(nameof(Index));
+                        }
+
+                        // Vehicle and Date match (double submission from refreshed page)
+                        if (!string.IsNullOrWhiteSpace(model.Head.VehicleNo)
+                            && string.Equals(existingChallan.VehicleNo?.Trim(), model.Head.VehicleNo?.Trim(), StringComparison.OrdinalIgnoreCase)
+                            && existingChallan.DocDate?.Date == model.Head.DocDate?.Date
+                            && existingChallan.CreatedOn >= DateTime.Now.AddSeconds(-120))
+                        {
+                            TempData["SuccessMessage"] = $"✅ Challan {existingChallan.DocNo} for vehicle {existingChallan.VehicleNo} was already saved.";
+                            return RedirectToAction(nameof(Index));
+                        }
+
+                        model.Head.DocNo = GenerateDocNo(model.Head.CompanyId, model.Head.DocDate);
+                    }
+                }
+                else
                 {
                     model.Head.DocNo = GenerateDocNo(model.Head.CompanyId, model.Head.DocDate);
+                }
+
+                // Anti-Double Submit Check 2: Same vehicle and same date created within last 60 seconds
+                if (!string.IsNullOrWhiteSpace(model.Head.VehicleNo))
+                {
+                    DateTime cutoff60 = DateTime.Now.AddSeconds(-60);
+                    var recentVehicleChallan = _context.ChallanHead.FirstOrDefault(x => !x.IsDeleted
+                        && x.CompanyId == model.Head.CompanyId
+                        && x.VehicleNo == model.Head.VehicleNo.Trim()
+                        && x.DocDate == model.Head.DocDate
+                        && (string.IsNullOrEmpty(currentUser) || x.CreatedBy == currentUser)
+                        && x.CreatedOn >= cutoff60);
+
+                    if (recentVehicleChallan != null)
+                    {
+                        TempData["SuccessMessage"] = $"✅ Challan {recentVehicleChallan.DocNo} for vehicle {recentVehicleChallan.VehicleNo} was already saved.";
+                        return RedirectToAction(nameof(Index));
+                    }
                 }
 
                 model.Head.TotPaid = model.Details.Sum(x => x.PaidAmt ?? 0);
@@ -383,6 +428,8 @@ namespace Nskg.Controllers
                 model.Head.PExpCode = ResolveAccCode(model.Head.PExpCode);
                 model.Head.PExpCode2 = ResolveAccCode(model.Head.PExpCode2);
                 model.Head.PExpCode3 = ResolveAccCode(model.Head.PExpCode3);
+                model.Head.CreatedOn = DateTime.Now;
+                model.Head.CreatedBy = currentUser;
 
                 // =========================
                 // SAVE HEAD

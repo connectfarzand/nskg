@@ -302,10 +302,46 @@ namespace Nskg.Controllers
                 model.Head.CompanyId = currentCompanyId;
                 model.Head.CoCode = User.GetCompanyCode();
 
-                if (string.IsNullOrWhiteSpace(model.Head.DocNo) ||
-                    _context.IssHead.Any(x => !x.IsDeleted && x.CompanyId == model.Head.CompanyId && x.DocNo == model.Head.DocNo))
+                string currentUser = GetUser();
+
+                // Anti-Double Submit / Duplicate Check 1: DocNo check
+                if (!string.IsNullOrWhiteSpace(model.Head.DocNo))
+                {
+                    var existingDoc = _context.IssHead.FirstOrDefault(x => !x.IsDeleted && x.CompanyId == model.Head.CompanyId && x.DocNo == model.Head.DocNo);
+                    if (existingDoc != null)
+                    {
+                        // If created within the last 120 seconds by this user or for this customer, it's a double-click submission
+                        if ((existingDoc.CreatedBy == currentUser || existingDoc.CustomerId == model.Head.CustomerId)
+                            && existingDoc.CreatedOn >= DateTime.Now.AddSeconds(-120))
+                        {
+                            TempData["SuccessMessage"] = $"✅ Bilty {existingDoc.DocNo} was already saved.";
+                            return RedirectToAction(nameof(Index));
+                        }
+
+                        // Otherwise another user took this DocNo, generate a new unique DocNo
+                        model.Head.DocNo = GenerateDocNo(model.Head.CompanyId, model.Head.DocDate);
+                    }
+                }
+                else
                 {
                     model.Head.DocNo = GenerateDocNo(model.Head.CompanyId, model.Head.DocDate);
+                }
+
+                // Anti-Double Submit / Rapid Duplicate Check: Same Bilty No and same Customer created within last 60 seconds
+                if (model.Head.BillTiNo.HasValue && model.Head.BillTiNo.Value > 0 && model.Head.CustomerId > 0)
+                {
+                    DateTime cutoff60 = DateTime.Now.AddSeconds(-60);
+                    var rapidBilty = _context.IssHead.FirstOrDefault(x => !x.IsDeleted
+                        && x.CompanyId == model.Head.CompanyId
+                        && x.BillTiNo == model.Head.BillTiNo.Value
+                        && x.CustomerId == model.Head.CustomerId
+                        && x.CreatedOn >= cutoff60);
+
+                    if (rapidBilty != null)
+                    {
+                        TempData["SuccessMessage"] = $"✅ Bilty {rapidBilty.DocNo} (Bilty #{model.Head.BillTiNo.Value}) was already saved.";
+                        return RedirectToAction(nameof(Index));
+                    }
                 }
                 model.Head.UserId = User.GetUserId();
                 model.Head.FyId = User.GetFinancialYearId();

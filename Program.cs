@@ -34,6 +34,10 @@ builder.Services.AddScoped<IAuditService, AuditService>();
 builder.Services.AddScoped<AccountingService, AccountingService>();
 builder.Services.AddScoped<FinancialYearClosingService, FinancialYearClosingService>();
 builder.Services.AddScoped<IRoleFormPermissionService, RoleFormPermissionService>();
+builder.Services.AddAntiforgery(options =>
+{
+    options.HeaderName = "RequestVerificationToken";
+});
 // Add services to the container.
 builder.Services.AddControllersWithViews();
 

@@ -139,9 +139,9 @@ namespace Nskg.Helpers
                 var rptRows = [];
 
                 function rptInitPagination() {
-                    var tbody = document.querySelector('table tbody');
+                    var tbody = document.querySelector('table.rpt-data-table tbody') || document.querySelector('table tbody');
                     if (!tbody) return;
-                    rptRows = Array.from(tbody.querySelectorAll('tr'));
+                    rptRows = Array.from(tbody.rows);
                     rptTotalRows = rptRows.length;
                     rptCalcPages();
                     rptRenderPage();
@@ -276,6 +276,7 @@ namespace Nskg.Helpers
                 }
 
                 document.addEventListener('DOMContentLoaded', rptInitPagination);
+                window.addEventListener('load', rptInitPagination);
                 if (document.readyState === 'complete' || document.readyState === 'interactive') {
                     setTimeout(rptInitPagination, 50);
                 }

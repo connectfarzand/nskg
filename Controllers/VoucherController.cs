@@ -295,14 +295,27 @@ namespace Nskg.Controllers
 
                 int companyId = User.GetCompanyId();
                 string companyCode = User.GetCompanyCode();
+                string currentUser = GetUser();
 
                 string submittedVono = vm.Head.Vono?.Trim();
-                bool isTaken = !string.IsNullOrWhiteSpace(submittedVono) && _context.VoHead.Any(x => !x.IsDeleted
+                var existingVo = !string.IsNullOrWhiteSpace(submittedVono) ? _context.VoHead.FirstOrDefault(x => !x.IsDeleted
                     && x.Votype != null && x.Votype.Trim() == type.Trim()
                     && x.Vono != null && x.Vono.Trim() == submittedVono
-                    && (companyId == 0 || x.CompanyId == companyId || (!string.IsNullOrEmpty(companyCode) && companyCode != "0" && x.Cocode == companyCode)));
+                    && (companyId == 0 || x.CompanyId == companyId || (!string.IsNullOrEmpty(companyCode) && companyCode != "0" && x.Cocode == companyCode))) : null;
 
-                if (!string.IsNullOrWhiteSpace(submittedVono) && !isTaken)
+                if (existingVo != null)
+                {
+                    // Double submission check: if created within the last 120 seconds by this user, it's a double-click
+                    if ((existingVo.CreatedBy == currentUser || existingVo.CreatedBy == User.Identity?.Name)
+                        && existingVo.CreatedOn >= DateTime.Now.AddSeconds(-120))
+                    {
+                        TempData["SuccessMessage"] = $"✅ Voucher {existingVo.Vono} was already saved.";
+                        return RedirectToAction(nameof(Index), new { type });
+                    }
+
+                    vm.Head.Vono = GenerateVoucherNo(type);
+                }
+                else if (!string.IsNullOrWhiteSpace(submittedVono))
                 {
                     vm.Head.Vono = submittedVono;
                 }

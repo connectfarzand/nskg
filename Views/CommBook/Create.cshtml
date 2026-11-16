@@ -114,7 +114,7 @@
     </style>
 }
 
-<form method="post" id="CommBookForm" class="form-dense">
+<form method="post" id="CommBookForm" class="form-dense" novalidate>
     @Html.AntiForgeryToken()
 
     <input type="hidden" asp-for="Head.DocNo" />
@@ -1297,9 +1297,6 @@
 
         // Validation before submit
         function validateBeforeSubmit() {
-            if ($("#CommBookForm").data('submitted') === true) {
-                return false;
-            }
             if ($("#tbodyItems tr").length === 0 || $("#noDataRow").length > 0) {
                 alert("Please add at least one bilty detail before saving.");
                 return false;

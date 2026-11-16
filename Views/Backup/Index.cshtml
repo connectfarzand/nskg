@@ -1,0 +1,163 @@
+@model IEnumerable<System.IO.FileInfo>
+
+@{
+    Layout = "~/Views/Shared/_Layout.cshtml";
+    ViewData["Title"] = "Database Backup & Maintenance";
+}
+
+<div class="page-header">
+    <div class="row align-items-center">
+        <div class="col">
+            <h3 class="page-title"><i class="la la-database text-primary"></i> Database Backup & Maintenance</h3>
+            <ul class="breadcrumb">
+                <li class="breadcrumb-item"><a asp-controller="Home" asp-action="Index">Dashboard</a></li>
+                <li class="breadcrumb-item active">Database Backup</li>
+            </ul>
+        </div>
+        <div class="col-auto float-end ms-auto">
+            <form asp-controller="Backup" asp-action="CreateBackup" method="post" id="backupForm" style="display:inline;">
+                @Html.AntiForgeryToken()
+                <button type="submit" class="btn btn-primary rounded-pill px-4" id="btnCreateBackup" onclick="showBackupSpinner()">
+                    <i class="fa fa-hdd-o me-1"></i> <span id="btnText">Create Backup Now</span>
+                </button>
+            </form>
+        </div>
+    </div>
+</div>
+
+@if (TempData["SuccessMessage"] != null)
+{
+    <div class="alert alert-success alert-dismissible fade show" role="alert">
+        <i class="fa fa-check-circle me-2"></i> @TempData["SuccessMessage"]
+        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+    </div>
+}
+
+@if (TempData["ErrorMessage"] != null)
+{
+    <div class="alert alert-danger alert-dismissible fade show" role="alert">
+        <i class="fa fa-exclamation-triangle me-2"></i> @TempData["ErrorMessage"]
+        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+    </div>
+}
+
+<!-- Info Cards for Low-Power Optimization -->
+<div class="row mb-4">
+    <div class="col-md-4">
+        <div class="card shadow-sm border-0 mb-3">
+            <div class="card-body d-flex align-items-center">
+                <div class="avatar avatar-lg bg-primary-subtle text-primary rounded-circle d-flex align-items-center justify-content-center me-3" style="width: 50px; height: 50px;">
+                    <i class="fa fa-database fa-2x"></i>
+                </div>
+                <div>
+                    <h6 class="text-muted mb-1 text-uppercase font-size-xs fw-semibold">Target Database</h6>
+                    <h5 class="mb-0 fw-bold">@ViewBag.DatabaseName</h5>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="card shadow-sm border-0 mb-3">
+            <div class="card-body d-flex align-items-center">
+                <div class="avatar avatar-lg bg-success-subtle text-success rounded-circle d-flex align-items-center justify-content-center me-3" style="width: 50px; height: 50px;">
+                    <i class="fa fa-bolt fa-2x"></i>
+                </div>
+                <div>
+                    <h6 class="text-muted mb-1 text-uppercase font-size-xs fw-semibold">Compression & Engine</h6>
+                    <h5 class="mb-0 fw-bold text-success">Optimized (Low CPU)</h5>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="card shadow-sm border-0 mb-3">
+            <div class="card-body d-flex align-items-center">
+                <div class="avatar avatar-lg bg-info-subtle text-info rounded-circle d-flex align-items-center justify-content-center me-3" style="width: 50px; height: 50px;">
+                    <i class="fa fa-folder-open-o fa-2x"></i>
+                </div>
+                <div>
+                    <h6 class="text-muted mb-1 text-uppercase font-size-xs fw-semibold">Total Storage Used</h6>
+                    <h5 class="mb-0 fw-bold">@ViewBag.TotalSpaceUsed (@ViewBag.TotalBackups Backups)</h5>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row">
+    <div class="col-md-12">
+        <div class="card shadow-sm border-0">
+            <div class="card-header bg-white py-3 d-flex justify-content-between align-items-center">
+                <h5 class="card-title mb-0 fw-bold"><i class="fa fa-history text-secondary me-2"></i> Available Backup Files</h5>
+                <span class="badge bg-light text-dark border">Auto-Retention: Last 10 backups kept</span>
+            </div>
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-hover table-striped align-middle mb-0">
+                        <thead class="table-light">
+                            <tr>
+                                <th class="ps-4">File Name</th>
+                                <th>Created Date & Time</th>
+                                <th>File Size</th>
+                                <th>Type</th>
+                                <th class="text-end pe-4">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @if (!Model.Any())
+                            {
+                                <tr>
+                                    <td colspan="5" class="text-center py-5 text-muted">
+                                        <i class="fa fa-folder-open-o fa-3x mb-3 text-secondary opacity-50"></i>
+                                        <p class="mb-1">No backups found.</p>
+                                        <small>Click "Create Backup Now" above to generate your first optimized database backup.</small>
+                                    </td>
+                                </tr>
+                            }
+                            else
+                            {
+                                @foreach (var file in Model)
+                                {
+                                    long bytes = file.Length;
+                                    string sizeStr = bytes >= 1024 * 1024 
+                                        ? $"{(bytes / (1024.0 * 1024.0)):F2} MB" 
+                                        : $"{(bytes / 1024.0):F2} KB";
+
+                                    <tr>
+                                        <td class="ps-4 fw-semibold text-dark">
+                                            <i class="fa fa-file-archive-o text-primary me-2"></i> @file.Name
+                                        </td>
+                                        <td>@file.CreationTime.ToString("dd MMM yyyy, hh:mm:ss tt")</td>
+                                        <td><span class="badge bg-success-subtle text-success border border-success-subtle px-2 py-1">@sizeStr</span></td>
+                                        <td><span class="text-muted"><i class="fa fa-compress text-success me-1"></i> Full (Compressed)</span></td>
+                                        <td class="text-end pe-4">
+                                            <a asp-action="Download" asp-route-fileName="@file.Name" class="btn btn-sm btn-outline-primary me-2" title="Download to PC">
+                                                <i class="fa fa-download me-1"></i> Download
+                                            </a>
+                                            <form asp-action="Delete" asp-route-fileName="@file.Name" method="post" style="display:inline;" onsubmit="return confirm('Are you sure you want to delete backup file: @file.Name?');">
+                                                @Html.AntiForgeryToken()
+                                                <button type="submit" class="btn btn-sm btn-outline-danger" title="Delete Backup">
+                                                    <i class="fa fa-trash-o me-1"></i> Delete
+                                                </button>
+                                            </form>
+                                        </td>
+                                    </tr>
+                                }
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    function showBackupSpinner() {
+        var btn = document.getElementById('btnCreateBackup');
+        var btnText = document.getElementById('btnText');
+        btn.disabled = true;
+        btnText.innerHTML = '<span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span> Creating Compressed Backup...';
+        document.getElementById('backupForm').submit();
+    }
+</script>

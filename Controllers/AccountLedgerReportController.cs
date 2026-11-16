@@ -440,8 +440,122 @@ namespace Nskg.Controllers
             return dt;
         }
 
+        private string BuildAccountLedgerHtml(DataTable dt, string accode, DateTime fromDate, DateTime toDate, bool isPrintMode = false, bool isForPdf = false)
+        {
+            string compName = (dt.Rows.Count > 0 ? dt.Rows[0]["CompanyName"]?.ToString() : null) ?? "Company";
+            string accName = (dt.Rows.Count > 0 ? dt.Rows[0]["AccName"]?.ToString() : null) ?? "";
+            string shortCompName = (dt.Rows.Count > 0 && dt.Columns.Contains("ShortCompanyName") ? dt.Rows[0]["ShortCompanyName"]?.ToString() : null) ?? "W.W";
+
+            decimal totalDebit = 0, totalCredit = 0;
+            var sb = new StringBuilder();
+            sb.Append(@"<!DOCTYPE html><html><head><meta charset='utf-8'>
+            <title>Account Ledger - " + accode + @"</title>
+            <style>
+                body{font-family:Arial,sans-serif;font-size:11px;margin:10px;color:#333;}
+                .header-box{margin-bottom:10px;}
+                .header-top{display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;}
+                .comp-initial{font-size:13px;font-weight:bold;border:2px solid #0d6efd;color:#0d6efd;padding:2px 8px;border-radius:4px;background:#f0f7ff;}
+                .header-box h2{margin:0;color:#0d6efd;font-size:16px;text-align:center;flex-grow:1;}
+                .print-meta{font-size:10px;color:#6c757d;text-align:right;}
+                .header-box h3{margin:4px 0;font-size:13px;color:#495057;text-align:center;}
+                .header-box p{margin:0;font-size:10px;color:#495057;text-align:center;}
+                table{width:100%;border-collapse:collapse;margin-top:6px;}
+                th{background:#0d6efd;color:#fff;padding:6px 5px;text-align:left;font-size:10px;border:1px solid #0b5ed7;}
+                td{padding:4px 5px;border:1px solid #dee2e6;font-size:10px;}
+                tr:nth-child(even){background:#f8f9fa;}
+                tr:hover{background:#e9ecef;}
+                .num{text-align:right;}
+                .bold{font-weight:bold;}
+                .op-row{background:#e7f1ff;font-weight:bold;}
+                tfoot tr{background:#d0e2ff;font-weight:bold;}
+                @media print {
+                    .no-print { display: none !important; }
+                    body { margin: 5mm; }
+                }
+            </style>");
+
+            if (!isForPdf)
+            {
+                sb.Append("<style>" + Nskg.Helpers.ReportPaginationHelper.GetPaginationStyles() + "</style>");
+            }
+
+            if (isPrintMode)
+            {
+                sb.Append("<script>window.addEventListener('load', function() { setTimeout(function() { window.print(); }, 300); });</script>");
+            }
+
+            sb.Append("</head><body>");
+
+            if (!isForPdf && !isPrintMode)
+            {
+                sb.Append(Nskg.Helpers.ReportPaginationHelper.GetPaginationToolbarHtml("Account Ledger"));
+            }
+
+            sb.Append($"<div class='header-box'>");
+            sb.Append($"<div class='header-top'>");
+            sb.Append($"<div class='comp-initial'>{shortCompName}</div>");
+            sb.Append($"<h2>{compName}</h2>");
+            sb.Append($"<div class='print-meta'>Print Date: {DateTime.Now:dd-MMM-yyyy HH:mm:ss}</div>");
+            sb.Append($"</div>");
+            sb.Append($"<div style='display:flex; justify-content:space-between; align-items:center; margin:6px 0 4px 0; padding-bottom:4px; border-bottom:1.5px solid #000;'>");
+            sb.Append($"<div style='font-size:14px; font-weight:bold;'><span style='letter-spacing:1px;'>{accode}</span> &nbsp;&nbsp;&nbsp;&nbsp; <span style='color:#0d6efd;'>{accName}</span></div>");
+            sb.Append($"<div style='font-size:11px; color:#495057;'>Period: <b>{fromDate:dd-MMM-yyyy}</b> to <b>{toDate:dd-MMM-yyyy}</b></div>");
+            sb.Append($"</div>");
+            sb.Append($"</div>");
+
+            sb.Append("<table><thead><tr>");
+            sb.Append("<th>Date</th><th>Doc #</th><th>Typ</th><th>Bilty #</th><th>Bill #</th><th>Vehicle No</th><th>Station</th><th>Party / Item</th><th class='num'>Qty</th><th>Initials</th><th class='num'>Debit</th><th class='num'>Credit</th><th class='num'>Balance</th>");
+            sb.Append("</tr></thead><tbody>");
+
+            foreach (DataRow row in dt.Rows)
+            {
+                string docDate = row["DocDate"] != DBNull.Value && row["DocDate"] != null ? Convert.ToDateTime(row["DocDate"]).ToString("dd-MMM-yy") : "";
+                string docNo = row["DocNo"]?.ToString() ?? "";
+                string votype = row["Votype"]?.ToString() ?? "";
+                string biltiNo = row["BillTiNo"]?.ToString() ?? "";
+                string bilNo = row["BilNo"]?.ToString() ?? "";
+                string vNo = row["VehicleNo"]?.ToString() ?? "";
+                string station = row["Station"]?.ToString() ?? "";
+                string iname = row["IName"]?.ToString() ?? "";
+                string qty = row["Qty"] != DBNull.Value && row["Qty"] != null ? (row["Qty"]?.ToString() ?? "") : "";
+                string initials = row["Initials"]?.ToString() ?? "";
+
+                decimal debit = row["Debit"] != DBNull.Value && row["Debit"] != null ? Convert.ToDecimal(row["Debit"]) : 0;
+                decimal credit = row["Credit"] != DBNull.Value && row["Credit"] != null ? Convert.ToDecimal(row["Credit"]) : 0;
+                decimal balance = row["Balance"] != DBNull.Value && row["Balance"] != null ? Convert.ToDecimal(row["Balance"]) : 0;
+
+                int sortOrder = row["SortOrder"] != DBNull.Value ? Convert.ToInt32(row["SortOrder"]) : 1;
+                if (sortOrder > 0)
+                {
+                    totalDebit += debit;
+                    totalCredit += credit;
+                }
+
+                string rowClass = sortOrder == 0 ? "class='op-row'" : "";
+                string debitStr = debit != 0 ? debit.ToString("#,##0.00") : "";
+                string creditStr = credit != 0 ? credit.ToString("#,##0.00") : "";
+
+                sb.Append($"<tr {rowClass}>");
+                sb.Append($"<td>{docDate}</td><td>{docNo}</td><td>{votype}</td><td>{biltiNo}</td><td>{bilNo}</td><td>{vNo}</td><td>{station}</td><td>{iname}</td><td class='num'>{qty}</td><td>{initials}</td><td class='num'>{debitStr}</td><td class='num'>{creditStr}</td><td class='num bold'>{balance:#,##0.00}</td>");
+                sb.Append($"</tr>");
+            }
+
+            sb.Append("</tbody><tfoot><tr>");
+            sb.Append($"<td colspan='10' style='text-align:right;' class='bold'>TOTALS:</td><td class='num bold'>{totalDebit:#,##0.00}</td><td class='num bold'>{totalCredit:#,##0.00}</td><td></td>");
+            sb.Append("</tr></tfoot></table>");
+
+            if (!isForPdf && !isPrintMode)
+            {
+                sb.Append(Nskg.Helpers.ReportPaginationHelper.GetPaginationScript());
+            }
+
+            sb.Append("</body></html>");
+
+            return sb.ToString();
+        }
+
         [HttpGet]
-        public IActionResult GeneratePDF(string accode, DateTime fromDate, DateTime toDate, int? companyId)
+        public IActionResult GeneratePDF(string accode, DateTime fromDate, DateTime toDate, int? companyId, string? format = null)
         {
             int selectedCompanyId = GetCompanyId(companyId);
             int financialYearId = GetFinancialYearId();
@@ -452,37 +566,37 @@ namespace Nskg.Controllers
 
                 if (dt == null || dt.Rows.Count == 0)
                 {
-                    return Content("No data found for selected date range and account.");
+                    return Content("<div style='font-family:Arial; padding:30px; text-align:center; color:#721c24; background-color:#f8d7da; border:1px solid #f5c6cb; border-radius:6px; margin:20px;'><strong>No data found for selected date range and account.</strong></div>", "text/html");
                 }
 
-                string reportPath = Path.Combine(_env.WebRootPath, "Reports", "AccountLedgerrpt.rdlc");
+                string html = BuildAccountLedgerHtml(dt, accode, fromDate, toDate, isPrintMode: format == "print", isForPdf: format != "print");
 
-                if (!System.IO.File.Exists(reportPath))
+                if (format == "print")
                 {
-                    return Content($"Report file not found: {reportPath}");
+                    return Content(html, "text/html");
                 }
 
-                using (LocalReport report = new LocalReport())
+                byte[] pdfBytes = Nskg.Helpers.PdfReportHelper.GeneratePdfFromHtml(html, PdfSharpCore.PageSize.A4, PdfSharpCore.PageOrientation.Landscape);
+
+                if (pdfBytes == null || pdfBytes.Length < 100)
                 {
-                    report.ReportPath = reportPath;
-                    report.DataSources.Clear();
-
-                    dt.TableName = "DSAccountLedger";
-                    report.DataSources.Add(new ReportDataSource("DSAccountLedger", dt));
-
-                    byte[] pdfBytes = report.Render("PDF");
-
-                    if (pdfBytes == null || pdfBytes.Length < 100)
-                    {
-                        return Content("PDF generation failed or corrupted output.");
-                    }
-
-                    return File(pdfBytes, "application/pdf", $"AccountLedger_{accode}_{fromDate:yyyyMMdd}_{toDate:yyyyMMdd}.pdf", enableRangeProcessing: true);
+                    return Content(BuildAccountLedgerHtml(dt, accode, fromDate, toDate, isPrintMode: true, isForPdf: false), "text/html");
                 }
+
+                return File(pdfBytes, "application/pdf", $"AccountLedger_{accode}_{fromDate:yyyyMMdd}_{toDate:yyyyMMdd}.pdf", enableRangeProcessing: true);
             }
             catch (Exception ex)
             {
-                return Content($"ERROR: {ex.Message}\n\nSTACK: {ex.StackTrace}");
+                Console.WriteLine($"[AccountLedgerReport] GeneratePDF exception: {ex.Message}. Falling back to print HTML.");
+                try
+                {
+                    DataTable dt = GetAccountLedger(accode, fromDate, toDate, selectedCompanyId, financialYearId);
+                    return Content(BuildAccountLedgerHtml(dt, accode, fromDate, toDate, isPrintMode: true, isForPdf: false), "text/html");
+                }
+                catch
+                {
+                    return Content($"ERROR: {ex.Message}\n\nSTACK: {ex.StackTrace}");
+                }
             }
         }
 
@@ -501,91 +615,8 @@ namespace Nskg.Controllers
                     return Content("<div style='font-family:Arial; padding:30px; text-align:center; color:#721c24; background-color:#f8d7da; border:1px solid #f5c6cb; border-radius:6px; margin:20px;'><strong>No data found for selected date range and account.</strong></div>", "text/html");
                 }
 
-                string compName = (dt.Rows.Count > 0 ? dt.Rows[0]["CompanyName"]?.ToString() : null) ?? "Company";
-                string accName = (dt.Rows.Count > 0 ? dt.Rows[0]["AccName"]?.ToString() : null) ?? "";
-                string shortCompName = (dt.Rows.Count > 0 && dt.Columns.Contains("ShortCompanyName") ? dt.Rows[0]["ShortCompanyName"]?.ToString() : null) ?? "W.W";
-
-                decimal totalDebit = 0, totalCredit = 0;
-                var sb = new StringBuilder();
-                sb.Append(@"<!DOCTYPE html><html><head><meta charset='utf-8'>
-                <style>
-                    body{font-family:Arial,sans-serif;font-size:12px;margin:12px;color:#333;}
-                    .header-box{margin-bottom:12px;}
-                    .header-top{display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;}
-                    .comp-initial{font-size:14px;font-weight:bold;border:2px solid #0d6efd;color:#0d6efd;padding:2px 10px;border-radius:4px;background:#f0f7ff;}
-                    .header-box h2{margin:0;color:#0d6efd;font-size:18px;text-align:center;flex-grow:1;}
-                    .print-meta{font-size:11px;color:#6c757d;text-align:right;}
-                    .header-box h3{margin:4px 0;font-size:14px;color:#495057;text-align:center;}
-                    .header-box p{margin:0;font-size:11px;color:#495057;text-align:center;}
-                    table{width:100%;border-collapse:collapse;margin-top:8px;}
-                    th{background:#0d6efd;color:#fff;padding:7px 6px;text-align:left;font-size:11px;border:1px solid #0b5ed7;}
-                    td{padding:5px 6px;border:1px solid #dee2e6;font-size:11px;}
-                    tr:nth-child(even){background:#f8f9fa;}
-                    tr:hover{background:#e9ecef;}
-                    .num{text-align:right;}
-                    .bold{font-weight:bold;}
-                    .op-row{background:#e7f1ff;font-weight:bold;}
-                    tfoot tr{background:#d0e2ff;font-weight:bold;}
-                    " + Nskg.Helpers.ReportPaginationHelper.GetPaginationStyles() + @"
-                </style></head><body>");
-
-                sb.Append(Nskg.Helpers.ReportPaginationHelper.GetPaginationToolbarHtml("Account Ledger"));
-                sb.Append($"<div class='header-box'>");
-                sb.Append($"<div class='header-top'>");
-                sb.Append($"<div class='comp-initial'>{shortCompName}</div>");
-                sb.Append($"<h2>{compName}</h2>");
-                sb.Append($"<div class='print-meta'>Print Date: {DateTime.Now:dd-MMM-yyyy HH:mm:ss}</div>");
-                sb.Append($"</div>");
-                sb.Append($"<div style='display:flex; justify-content:space-between; align-items:center; margin:8px 0 4px 0; padding-bottom:4px; border-bottom:1.5px solid #000;'>");
-                sb.Append($"<div style='font-size:15px; font-weight:bold;'><span style='letter-spacing:1px;'>{accode}</span> &nbsp;&nbsp;&nbsp;&nbsp; <span style='color:#0d6efd;'>{accName}</span></div>");
-                sb.Append($"<div style='font-size:11px; color:#495057;'>Period: <b>{fromDate:dd-MMM-yyyy}</b> to <b>{toDate:dd-MMM-yyyy}</b></div>");
-                sb.Append($"</div>");
-                sb.Append($"</div>");
-
-                sb.Append("<table><thead><tr>");
-                sb.Append("<th>Date</th><th>Doc #</th><th>Typ</th><th>Bilty #</th><th>Bill #</th><th>Vehicle No</th><th>Station</th><th>Party / Item</th><th class='num'>Qty</th><th>Initials</th><th class='num'>Debit</th><th class='num'>Credit</th><th class='num'>Balance</th>");
-                sb.Append("</tr></thead><tbody>");
-
-                foreach (DataRow row in dt.Rows)
-                {
-                    string docDate = row["DocDate"] != DBNull.Value && row["DocDate"] != null ? Convert.ToDateTime(row["DocDate"]).ToString("dd-MMM-yy") : "";
-                    string docNo = row["DocNo"]?.ToString() ?? "";
-                    string votype = row["Votype"]?.ToString() ?? "";
-                    string biltiNo = row["BillTiNo"]?.ToString() ?? "";
-                    string bilNo = row["BilNo"]?.ToString() ?? "";
-                    string vNo = row["VehicleNo"]?.ToString() ?? "";
-                    string station = row["Station"]?.ToString() ?? "";
-                    string iname = row["IName"]?.ToString() ?? "";
-                    string qty = row["Qty"] != DBNull.Value && row["Qty"] != null ? (row["Qty"]?.ToString() ?? "") : "";
-                    string initials = row["Initials"]?.ToString() ?? "";
-
-                    decimal debit = row["Debit"] != DBNull.Value && row["Debit"] != null ? Convert.ToDecimal(row["Debit"]) : 0;
-                    decimal credit = row["Credit"] != DBNull.Value && row["Credit"] != null ? Convert.ToDecimal(row["Credit"]) : 0;
-                    decimal balance = row["Balance"] != DBNull.Value && row["Balance"] != null ? Convert.ToDecimal(row["Balance"]) : 0;
-
-                    int sortOrder = row["SortOrder"] != DBNull.Value ? Convert.ToInt32(row["SortOrder"]) : 1;
-                    if (sortOrder > 0)
-                    {
-                        totalDebit += debit;
-                        totalCredit += credit;
-                    }
-
-                    string rowClass = sortOrder == 0 ? "class='op-row'" : "";
-                    string debitStr = debit != 0 ? debit.ToString("#,##0.00") : "";
-                    string creditStr = credit != 0 ? credit.ToString("#,##0.00") : "";
-
-                    sb.Append($"<tr {rowClass}>");
-                    sb.Append($"<td>{docDate}</td><td>{docNo}</td><td>{votype}</td><td>{biltiNo}</td><td>{bilNo}</td><td>{vNo}</td><td>{station}</td><td>{iname}</td><td class='num'>{qty}</td><td>{initials}</td><td class='num'>{debitStr}</td><td class='num'>{creditStr}</td><td class='num bold'>{balance:#,##0.00}</td>");
-                    sb.Append($"</tr>");
-                }
-
-                sb.Append("</tbody><tfoot><tr>");
-                sb.Append($"<td colspan='10' style='text-align:right;' class='bold'>TOTALS:</td><td class='num bold'>{totalDebit:#,##0.00}</td><td class='num bold'>{totalCredit:#,##0.00}</td><td></td>");
-                sb.Append("</tr></tfoot></table>");
-                sb.Append(Nskg.Helpers.ReportPaginationHelper.GetPaginationScript());
-                sb.Append("</body></html>");
-
-                return Content(sb.ToString(), "text/html");
+                string html = BuildAccountLedgerHtml(dt, accode, fromDate, toDate, isPrintMode: false, isForPdf: false);
+                return Content(html, "text/html");
             }
             catch (Exception ex)
             {

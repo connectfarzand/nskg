@@ -509,6 +509,7 @@
 	</head>
 	
 	<body>
+		<form id="__afForm" style="display:none">@Html.AntiForgeryToken()</form>
 		<!-- Main Wrapper -->
 		<div class="main-wrapper">
 		
@@ -2539,23 +2540,13 @@
 		(function ($) {
 			if (!$) return;
 
-			// 1. Block repeated clicks on any save/submit button if form is already submitting
-			$(document).on('click', 'button[type="submit"], input[type="submit"], #btnSave, #btnUpdate, #btnSaveComm', function (e) {
-				var $btn = $(this);
-				var $form = $btn.closest('form');
-				if (!$form.length) {
-					$form = $('form:visible').first();
-				}
-				if ($form.length && $form.data('submitted') === true) {
-					e.preventDefault();
-					e.stopImmediatePropagation();
-					return false;
-				}
-			});
-
-			// 2. Intercept form submission
+			// Intercept form submission safely
 			$(document).on('submit', 'form', function (e) {
 				var $form = $(this);
+				var $btn = $form.find('button[type="submit"], input[type="submit"], #btnSave, #btnUpdate, #btnSaveComm');
+				if (!$btn.length) {
+					$btn = $('#btnSave, #btnUpdate, #btnSaveComm').filter(':visible');
+				}
 
 				// Allow opt-out if data-allow-double-submit="true"
 				if ($form.attr('data-allow-double-submit') === 'true') {
@@ -2587,20 +2578,7 @@
 				// Mark as submitted synchronously
 				$form.data('submitted', true);
 
-				// Find submit buttons for this form
-				var $btn = $form.find('button[type="submit"], input[type="submit"], #btnSave, #btnUpdate, #btnSaveComm');
-				if (!$btn.length) {
-					$btn = $('#btnSave, #btnUpdate, #btnSaveComm').filter(':visible');
-				}
-
 				if ($btn.length) {
-					// Immediately block pointer events to prevent fast double-clicks
-					$btn.css({
-						'pointer-events': 'none',
-						'opacity': '0.75',
-						'cursor': 'not-allowed'
-					});
-
 					// Save original HTML
 					$btn.each(function () {
 						var $b = $(this);
@@ -2609,7 +2587,7 @@
 						}
 					});
 
-					// Disable button in setTimeout 0 so browser initiates the form submission without interruption
+					// Disable button in setTimeout 50 so browser initiates the form submission without interruption
 					setTimeout(function () {
 						$btn.prop('disabled', true).addClass('disabled');
 						$btn.each(function () {
@@ -2621,10 +2599,10 @@
 								$b.html('<i class="fa fa-spinner fa-spin me-1"></i> Saving...');
 							}
 						});
-					}, 0);
+					}, 50);
 				}
 
-				// Safety fallback: if the page doesn't unload within 15 seconds, restore button
+				// Safety fallback: if the page doesn't unload within 10 seconds, restore button
 				setTimeout(function () {
 					if ($form.data('submitted')) {
 						$form.data('submitted', false);
@@ -2641,7 +2619,7 @@
 							});
 						}
 					}
-				}, 15000);
+				}, 10000);
 
 				return true;
 			});

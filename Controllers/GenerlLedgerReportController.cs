@@ -127,105 +127,14 @@ namespace Nskg.Controllers
         }
 
         [HttpGet]
-        public IActionResult GeneratePDF(string accode, DateTime fromDate, DateTime toDate, int? companyId)
+        private string BuildGeneralLedgerHtml(DataTable dt, string accode, DateTime fromDate, DateTime toDate, bool isPrintMode = false, bool isForPdf = false)
         {
-            int selectedCompanyId = GetCompanyId(companyId);
-            int financialYearId = GetFinancialYearId();
-            try
-            {
-                DataTable dt = GetGeneralLedger(accode, fromDate, toDate, selectedCompanyId, financialYearId);
-
-                if (dt == null || dt.Rows.Count == 0)
-                {
-                    return Content("No data found for selected date range.");
-                }
-
-                string reportPath = Path.Combine(_env.WebRootPath, "Reports", "GeneralLedgerrpt.rdlc");
-
-                if (!System.IO.File.Exists(reportPath))
-                {
-                    return Content($"Report file not found: {reportPath}");
-                }
-
-                using (LocalReport report = new LocalReport())
-                {
-                    report.ReportPath = reportPath;
-
-                    report.DataSources.Clear();
-
-                    dt.TableName = "DSGeneralLedger";
-                    report.DataSources.Add(new ReportDataSource("DSGeneralLedger", dt));
-
-                    byte[] pdfBytes = report.Render("PDF");
-
-                    if (pdfBytes == null || pdfBytes.Length < 1000)
-                    {
-                        try
-                        {
-                            byte[] htmlBytes = report.Render("HTML5");
-                            if (htmlBytes != null && htmlBytes.Length > 0)
-                            {
-                                try
-                                {
-                                    var debugHtmlPath = Path.Combine(_env.WebRootPath, "Reports", "_last_audit_report_debug.html");
-                                    System.IO.File.WriteAllBytes(debugHtmlPath, htmlBytes);
-                                    return File(htmlBytes, "text/html");
-                                }
-                                catch
-                                {
-                                    return File(htmlBytes, "text/html");
-                                }
-                            }
-                        }
-                        catch
-                        {
-                            // ignore fallback errors
-                        }
-
-                        if (pdfBytes != null && pdfBytes.Length > 0)
-                        {
-                            try
-                            {
-                                var debugPath = Path.Combine(_env.WebRootPath, "Reports", "_last_audit_report_debug.pdf");
-                                System.IO.File.WriteAllBytes(debugPath, pdfBytes);
-                                return Content($"PDF generation failed or corrupted output. Debug file written to: {debugPath}");
-                            }
-                            catch
-                            {
-                                // ignore file write errors
-                            }
-                        }
-
-                        return Content("PDF generation failed or corrupted output. Try opening report as HTML (fallback) or verify RDLC dataset names and resources.");
-                    }
-
-                    return File(pdfBytes, "application/pdf", "GeneralLedgerReport.pdf", enableRangeProcessing: true);
-                }
-            }
-            catch (Exception ex)
-            {
-                return Content($"ERROR: {ex.Message}\n\nSTACK: {ex.StackTrace}");
-            }
-        }
-
-
-        [HttpGet]
-        public IActionResult OnScreenReport(string accode, DateTime fromDate, DateTime toDate, int? companyId)
-        {
-            int selectedCompanyId = GetCompanyId(companyId);
-            int financialYearId = GetFinancialYearId();
-            var dt = GetGeneralLedger(accode, fromDate, toDate, selectedCompanyId, financialYearId);
-
-            if (dt == null || dt.Rows.Count == 0)
-            {
-                return Content("<div style='font-family:Arial; padding:30px; text-align:center; color:#721c24; background-color:#f8d7da; border:1px solid #f5c6cb; border-radius:6px; margin:20px;'><strong>No data found for selected date range.</strong></div>", "text/html");
-            }
-
             string compName = (dt.Columns.Contains("CompanyName") && dt.Rows.Count > 0 ? dt.Rows[0]["CompanyName"]?.ToString() : null) ?? "Company";
             string accName = (dt.Columns.Contains("AccName") && dt.Rows.Count > 0 ? dt.Rows[0]["AccName"]?.ToString() : null) ?? "";
 
             var sb = new StringBuilder();
             sb.Append(@"<!DOCTYPE html><html><head><meta charset='utf-8'>
+            <title>General Ledger - " + accode + @"</title>
             <style>
                 body{font-family:Arial,sans-serif;font-size:12px;margin:12px;color:#333;}
                 .header-box{text-align:center;margin-bottom:12px;}
@@ -241,10 +150,29 @@ namespace Nskg.Controllers
                 .center{text-align:center;}
                 .bold{font-weight:bold;}
                 tfoot tr{background:#d0e2ff;font-weight:bold;}
-                " + Nskg.Helpers.ReportPaginationHelper.GetPaginationStyles() + @"
-            </style></head><body>");
+                @media print {
+                    .no-print { display: none !important; }
+                    body { margin: 5mm; }
+                }
+            </style>");
 
-            sb.Append(Nskg.Helpers.ReportPaginationHelper.GetPaginationToolbarHtml("General Ledger"));
+            if (!isForPdf)
+            {
+                sb.Append("<style>" + Nskg.Helpers.ReportPaginationHelper.GetPaginationStyles() + "</style>");
+            }
+
+            if (isPrintMode)
+            {
+                sb.Append("<script>window.addEventListener('load', function() { setTimeout(function() { window.print(); }, 300); });</script>");
+            }
+
+            sb.Append("</head><body>");
+
+            if (!isForPdf && !isPrintMode)
+            {
+                sb.Append(Nskg.Helpers.ReportPaginationHelper.GetPaginationToolbarHtml("General Ledger"));
+            }
+
             sb.Append($"<div class='header-box'>");
             sb.Append($"<h2>{compName}</h2>");
             sb.Append($"<h3>GENERAL LEDGER REPORT</h3>");
@@ -307,15 +235,97 @@ namespace Nskg.Controllers
             }
 
             sb.Append("</tbody></table>");
-            sb.Append(Nskg.Helpers.ReportPaginationHelper.GetPaginationScript());
+
+            if (!isForPdf && !isPrintMode)
+            {
+                sb.Append(Nskg.Helpers.ReportPaginationHelper.GetPaginationScript());
+            }
+
             sb.Append("</body></html>");
 
-            return Content(sb.ToString(), "text/html");
+            return sb.ToString();
+        }
+
+        [HttpGet]
+        public IActionResult GeneratePDF(string accode, DateTime fromDate, DateTime toDate, int? companyId, string? format = null)
+        {
+            if (string.IsNullOrWhiteSpace(accode))
+            {
+                return Content("<div style='font-family:Arial; padding:30px; text-align:center; color:#721c24; background-color:#f8d7da; border:1px solid #f5c6cb; border-radius:6px; margin:20px;'><strong>Please select an account before generating report.</strong></div>", "text/html");
+            }
+
+            int selectedCompanyId = GetCompanyId(companyId);
+            int financialYearId = GetFinancialYearId();
+            try
+            {
+                DataTable dt = GetGeneralLedger(accode, fromDate, toDate, selectedCompanyId, financialYearId);
+
+                if (dt == null || dt.Rows.Count == 0)
+                {
+                    return Content("<div style='font-family:Arial; padding:30px; text-align:center; color:#721c24; background-color:#f8d7da; border:1px solid #f5c6cb; border-radius:6px; margin:20px;'><strong>No data found for selected date range.</strong></div>", "text/html");
+                }
+
+                string html = BuildGeneralLedgerHtml(dt, accode, fromDate, toDate, isPrintMode: format == "print", isForPdf: format != "print");
+
+                if (format == "print")
+                {
+                    return Content(html, "text/html");
+                }
+
+                byte[] pdfBytes = Nskg.Helpers.PdfReportHelper.GeneratePdfFromHtml(html, PdfSharpCore.PageSize.A4, PdfSharpCore.PageOrientation.Landscape);
+
+                if (pdfBytes == null || pdfBytes.Length < 100)
+                {
+                    return Content(BuildGeneralLedgerHtml(dt, accode, fromDate, toDate, isPrintMode: true, isForPdf: false), "text/html");
+                }
+
+                return File(pdfBytes, "application/pdf", $"GeneralLedger_{accode}_{fromDate:yyyyMMdd}_{toDate:yyyyMMdd}.pdf", enableRangeProcessing: true);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[GeneralLedgerReport] GeneratePDF exception: {ex.Message}. Falling back to print HTML.");
+                try
+                {
+                    DataTable dt = GetGeneralLedger(accode, fromDate, toDate, selectedCompanyId, financialYearId);
+                    return Content(BuildGeneralLedgerHtml(dt, accode, fromDate, toDate, isPrintMode: true, isForPdf: false), "text/html");
+                }
+                catch
+                {
+                    return Content($"ERROR: {ex.Message}\n\nSTACK: {ex.StackTrace}");
+                }
+            }
+        }
+
+
+        [HttpGet]
+        public IActionResult OnScreenReport(string accode, DateTime fromDate, DateTime toDate, int? companyId)
+        {
+            if (string.IsNullOrWhiteSpace(accode))
+            {
+                return Content("<div style='font-family:Arial; padding:30px; text-align:center; color:#721c24; background-color:#f8d7da; border:1px solid #f5c6cb; border-radius:6px; margin:20px;'><strong>Please select an account before viewing report.</strong></div>", "text/html");
+            }
+
+            int selectedCompanyId = GetCompanyId(companyId);
+            int financialYearId = GetFinancialYearId();
+            var dt = GetGeneralLedger(accode, fromDate, toDate, selectedCompanyId, financialYearId);
+
+            if (dt == null || dt.Rows.Count == 0)
+            {
+                return Content("<div style='font-family:Arial; padding:30px; text-align:center; color:#721c24; background-color:#f8d7da; border:1px solid #f5c6cb; border-radius:6px; margin:20px;'><strong>No data found for selected date range.</strong></div>", "text/html");
+            }
+
+            string html = BuildGeneralLedgerHtml(dt, accode, fromDate, toDate, isPrintMode: false, isForPdf: false);
+            return Content(html, "text/html");
         }
 
         [HttpGet]
         public IActionResult ExportExcel(string accode, DateTime fromDate, DateTime toDate, int? companyId)
         {
+            if (string.IsNullOrWhiteSpace(accode))
+            {
+                return Content("Please select an account before exporting.");
+            }
+
             int selectedCompanyId = GetCompanyId(companyId);
             int financialYearId = GetFinancialYearId();
             var dt = GetGeneralLedger(accode, fromDate, toDate, selectedCompanyId, financialYearId);

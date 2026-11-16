@@ -1,7 +1,7 @@
 @using Nskg.Models.ViewModels
 @model BiltyViewModel
 
-<form id="myForm" asp-action="Create" method="post">
+<form id="myForm" asp-action="Create" method="post" novalidate>
 
     <input type="hidden" asp-for="Head.DocNo" />
     <!-- HEADER -->
@@ -308,7 +308,8 @@
         document.addEventListener('keydown', function (e) {
             if (e.ctrlKey && e.key.toLowerCase() === 's') {
                 e.preventDefault();
-                document.getElementById('btnSave').click();
+                var btn = document.getElementById('btnSave');
+                if (btn && !btn.disabled) btn.click();
             }
         });
     </script>

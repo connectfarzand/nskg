@@ -3,7 +3,7 @@
 -- Converted directly from Oracle PROCESSDETAIL procedure for Party Expense
 -- Supports multi-branch (@CompanyId = 0) and linked accounts
 -- =========================================================================
-CREATE OR ALTER PROCEDURE [dbo].[PROCESSDETAIL_PartyExp]  
+alter   PROCEDURE [dbo].[PROCESSDETAIL_PartyExp]  
 (
     @CompanyId int = 0,
     @TDATE  DATE,
@@ -12,7 +12,8 @@ CREATE OR ALTER PROCEDURE [dbo].[PROCESSDETAIL_PartyExp]
 )
 AS
 BEGIN
-    SET NOCOUNT ON;
+ 
+   SET NOCOUNT ON;
     SET XACT_ABORT ON;
 
     DECLARE
@@ -37,7 +38,8 @@ BEGIN
             IF @MON BETWEEN '07' AND '12'
             BEGIN
                 SET @SYEAR = RIGHT(CAST(YEAR(@MDATE) AS VARCHAR(4)), 2);
-            END
+    
+        END
             ELSE
             BEGIN
                 SET @SYEAR = RIGHT('0' + CAST((YEAR(@MDATE) % 100) - 1 AS VARCHAR(2)), 2);
@@ -90,19 +92,19 @@ BEGIN
 
         /* =========================================================
            ACPARA CONTROL ACCOUNTS UPDATES (Single Company Only)
-           ========================================================= */
+          ========================================================= */
         IF @CompanyId > 0
         BEGIN
             UPDATE ISSHEAD
             SET ACcCODE = (SELECT TOP 1 RTRIM(ACCODE) FROM ACPARA WHERE ACTYPE = 'S' AND CompanyId = @CompanyId)
-            WHERE CompanyId = @CompanyId;
+           WHERE CompanyId = @CompanyId;
 
             UPDATE COMMHEAD
             SET ACCODE = (SELECT TOP 1 RTRIM(ACCODE) FROM ACPARA WHERE ACTYPE = 'D' AND CompanyId = @CompanyId)
-            WHERE CompanyId = @CompanyId;
+           WHERE CompanyId = @CompanyId;
 
             UPDATE ISSDETAIL
-            SET ACcCODE = (SELECT TOP 1 RTRIM(ACCODE) FROM ACPARA WHERE ACTYPE = 'S' AND CompanyId = @CompanyId)
+           SET ACcCODE = (SELECT TOP 1 RTRIM(ACCODE) FROM ACPARA WHERE ACTYPE = 'S' AND CompanyId = @CompanyId)
             WHERE CompanyId = @CompanyId;
 
             UPDATE CommDetail
@@ -125,6 +127,7 @@ BEGIN
             SUBSTRING(d.HACC, 1, 3), SUBSTRING(d.HACC, 4, 3),
             CASE WHEN @ACCODE <> '' THEN @ACCODE ELSE d.HACC END,
             d.CRAMT, d.DRAMT,
+
             RTRIM(d.NARRATION), d.CHQNO, d.CHQDATE, '2',
             d.INVNO, d.BILLTINO, d.BILNO, d.NAME, d.VEHICLENO, d.TRANSPORTER
         FROM VODET d
@@ -184,7 +187,8 @@ BEGIN
           AND d.VODATE <= @TDATE
           AND ISNULL(d.INVNO, '0') = '0'
           AND (ISNULL(d.DRAMT, 0) + ISNULL(d.CRAMT, 0) <> 0)
-          AND ISNULL(d.HACC, '999999') NOT IN (SELECT AccCode FROM @TargetAccounts)
+     
+     AND ISNULL(d.HACC, '999999') NOT IN (SELECT AccCode FROM @TargetAccounts)
           AND (@ACCODE = '' OR RTRIM(d.AC1) + RTRIM(d.AC3) IN (SELECT AccCode FROM @TargetAccounts) OR RTRIM(d.ACC) IN (SELECT AccCode FROM @TargetAccounts))
           AND (RTRIM(d.AC1) + RTRIM(d.AC3)) <> ISNULL(d.HACC, '999999')
           AND ISNULL(h.IsDeleted, 0) = 0;
@@ -200,7 +204,7 @@ BEGIN
             INVNO, BILLTINO, BILNO
         )
         SELECT
-            h.CompanyId, d.VONO, d.VODATE, 'TD',
+       h.CompanyId, d.VONO, d.VODATE, 'TD',
             d.AC1, d.AC3,
             CASE WHEN @ACCODE <> '' THEN @ACCODE ELSE RTRIM(d.AC1) + RTRIM(d.AC3) END,
             d.PTAX, 'Tax Detection',
@@ -212,7 +216,8 @@ BEGIN
           AND d.VODATE <= @TDATE
           AND ISNULL(d.PTAX, 0) <> 0
           AND ISNULL(d.INVNO, '0') = '0'
-          AND ISNULL(d.HACC, '999999') NOT IN (SELECT AccCode FROM @TargetAccounts)
+    
+      AND ISNULL(d.HACC, '999999') NOT IN (SELECT AccCode FROM @TargetAccounts)
           AND (@ACCODE = '' OR RTRIM(d.AC1) + RTRIM(d.AC3) IN (SELECT AccCode FROM @TargetAccounts) OR RTRIM(d.ACC) IN (SELECT AccCode FROM @TargetAccounts))
           AND (RTRIM(d.AC1) + RTRIM(d.AC3)) <> ISNULL(d.HACC, '999999')
           AND ISNULL(h.IsDeleted, 0) = 0;
@@ -244,7 +249,7 @@ BEGIN
         GROUP BY h.CompanyId, d.VONO, d.VODATE, d.VOTYPE, d.AC1, d.AC3, RTRIM(d.NARRATION), d.CHQNO, d.CHQDATE;
 
         /* =========================================================
-           6. ITEM WISE SALES PAID (ISSHEAD 'BL')
+           6.ITEM WISE SALES PAID (ISSHEAD 'BL')
            ========================================================= */
         INSERT INTO ACCUMULATED
         (
@@ -267,7 +272,8 @@ BEGIN
 
         /* =========================================================
            7. TRANSPORTER FREIGHT (COMMHEAD 'TR')
-           ========================================================= */
+           ===
+====================================================== */
         INSERT INTO ACCUMULATED
         (
             COCODE, VONO, VODATE, VOTYPE,
@@ -278,8 +284,7 @@ BEGIN
             H.CompanyId, H.DOCNO, H.DOCDATE, 'TR',
             SUBSTRING(H.TRANSCODE, 1, 3), SUBSTRING(H.TRANSCODE, 4, 3),
             CASE WHEN @ACCODE <> '' THEN @ACCODE ELSE H.TRANSCODE END,
-            ISNULL(H.TRANSPORTERAMT, 0), '3',
-            H.VEHICLENO, H.STATION, H.TOTNET, H.LOCALAMT, H.DELIVERYAMT
+            ISNULL(H.TRANSPORTERAMT, 0), '3',H.VEHICLENO, H.STATION, H.TOTNET, H.LOCALAMT, H.DELIVERYAMT
         FROM COMMHEAD H
         WHERE (@CompanyId = 0 OR H.CompanyId = @CompanyId)
           AND (@ACCODE = '' OR RTRIM(H.TRANSCODE) IN (SELECT AccCode FROM @TargetAccounts))
@@ -289,7 +294,8 @@ BEGIN
         /* =========================================================
            8. SALES ACCOUNT (ISSHEAD 'BL' ACcCODE)
            ========================================================= */
-        INSERT INTO ACCUMULATED
+  
+      INSERT INTO ACCUMULATED
         (
             COCODE, VONO, VODATE, VOTYPE,
             AC1, AC3, ACC, CRAMT, ACTYPE,
@@ -301,7 +307,8 @@ BEGIN
             CASE WHEN @ACCODE <> '' THEN @ACCODE ELSE H.ACcCODE END,
             ISNULL(H.NETAMT, 0), '3',
             H.VEHICLENO, H.QTY, H.CUSNAME, H.FOODER, H.BILNO, H.BILLTINO
-        FROM ISSHEAD H
+  
+      FROM ISSHEAD H
         WHERE (@CompanyId = 0 OR H.CompanyId = @CompanyId)
           AND (@ACCODE = '' OR H.ACcCODE IN (SELECT AccCode FROM @TargetAccounts))
           AND H.DOCDATE <= @TDATE
@@ -329,7 +336,8 @@ BEGIN
           AND ISNULL(H.IsDeleted, 0) = 0;
 
         /* =========================================================
-           10. COMMISSION BOOK (COMMHEAD 'CB' NEGATIVE TOTAMT -> DRAMT)
+           10. COMMISSION BOOK (COMMHEAD 'CB' NEGATIVE TOTAMT -> DRA
+MT)
            ========================================================= */
         INSERT INTO ACCUMULATED
         (
@@ -349,6 +357,7 @@ BEGIN
           AND ISNULL(H.TOTAMT, 0) < 0
           AND ISNULL(H.IsDeleted, 0) = 0;
 
+
         /* =========================================================
            11. CARTAGE IN SALES: LABOUR (COMMHEAD 'LB')
            ========================================================= */
@@ -361,7 +370,8 @@ BEGIN
         SELECT
             CASE WHEN H.CompanyId IN (1008, 1009) THEN 1007 ELSE H.CompanyId END,
             H.DOCNO, H.DOCDATE, 'LB',
-            SUBSTRING(@ACCODE, 1, 3), SUBSTRING(@ACCODE, 4, 3),
+  
+          SUBSTRING(@ACCODE, 1, 3), SUBSTRING(@ACCODE, 4, 3),
             @ACCODE,
             ISNULL(H.LABOUR, 0), '2',
             H.VEHICLENO, H.STATION, H.TRANSPORTER
@@ -391,7 +401,8 @@ BEGIN
         FROM COMMHEAD H
         WHERE (@CompanyId = 0 OR CASE WHEN H.CompanyId IN (1008, 1009) THEN 1007 ELSE H.CompanyId END = @CompanyId)
           AND (@ACCODE = '' OR RTRIM(@ACCODE) = (SELECT TOP 1 RTRIM(ACCODE) FROM ACPARA WHERE ACTYPE = 'U' AND (@CompanyId = 0 OR CompanyId = @CompanyId)))
-          AND H.DOCDATE <= @TDATE
+     
+     AND H.DOCDATE <= @TDATE
           AND ISNULL(H.LOCALAMT, 0) > 0
           AND ISNULL(H.IsDeleted, 0) = 0;
 
@@ -417,6 +428,7 @@ BEGIN
           AND ISNULL(H.CARTAGE1, 0) > 0
           AND ISNULL(H.IsDeleted, 0) = 0;
 
+
         INSERT INTO ACCUMULATED
         (
             COCODE, VONO, VODATE, VOTYPE,
@@ -424,21 +436,23 @@ BEGIN
         )
         SELECT
             CASE WHEN H.CompanyId IN (1008, 1009) THEN 1007 ELSE H.CompanyId END,
-            H.DOCNO, H.DOCDATE, 'SL',
+           H.DOCNO, H.DOCDATE, 'SL',
             SUBSTRING(H.TRANSPORTER2, 1, 3), SUBSTRING(H.TRANSPORTER2, 4, 3),
             CASE WHEN @ACCODE <> '' THEN @ACCODE ELSE H.TRANSPORTER2 END,
             ISNULL(H.CARTAGE2, 0), 'L',
             'CARTAGE on Inv #: ' + ISNULL(CONVERT(VARCHAR(50), H.INVNO), '') + ' ' + RTRIM(H.CARTTYPE2) + ' Trip to Customer: ' + RTRIM(H.CUSNAME)
         FROM ISSHEAD H
         WHERE (@CompanyId = 0 OR CASE WHEN H.CompanyId IN (1008, 1009) THEN 1007 ELSE H.CompanyId END = @CompanyId)
-          AND (@ACCODE = '' OR RTRIM(H.TRANSPORTER2) IN (SELECT AccCode FROM @TargetAccounts))
+     
+     AND (@ACCODE = '' OR RTRIM(H.TRANSPORTER2) IN (SELECT AccCode FROM @TargetAccounts))
           AND H.DOCDATE <= @TDATE
           AND ISNULL(H.CARTAGE2, 0) > 0
           AND ISNULL(H.IsDeleted, 0) = 0;
 
         INSERT INTO ACCUMULATED
         (
-            COCODE, VONO, VODATE, VOTYPE,
+      
+      COCODE, VONO, VODATE, VOTYPE,
             AC1, AC3, ACC, CRAMT, ACTYPE, NARRATION
         )
         SELECT
@@ -490,6 +504,7 @@ BEGIN
             NARRATION, VEHICLENO, STATION, INAME, BILLTINO
         )
         SELECT
+
             CASE WHEN H.CompanyId IN (1008, 1009) THEN 1007 ELSE H.CompanyId END,
             H.DOCNO, H.DOCDATE, 'CL',
             SUBSTRING(H.PARTYSTATIONCODE, 1, 3), SUBSTRING(H.PARTYSTATIONCODE, 4, 3),
@@ -508,13 +523,15 @@ BEGIN
 
         -- PExpAmt 3
         INSERT INTO ACCUMULATED
-        (
+    
+    (
             COCODE, VONO, VODATE, VOTYPE,
             AC1, AC3, ACC, DRAMT, ACTYPE,
             NARRATION, VEHICLENO, STATION, INAME, BILLTINO
         )
         SELECT
             CASE WHEN H.CompanyId IN (1008, 1009) THEN 1007 ELSE H.CompanyId END,
+
             H.DOCNO, H.DOCDATE, 'CL',
             SUBSTRING(H.PARTYSTATIONCODE, 1, 3), SUBSTRING(H.PARTYSTATIONCODE, 4, 3),
             CASE WHEN @ACCODE <> '' THEN @ACCODE ELSE H.PARTYSTATIONCODE END,
@@ -526,7 +543,8 @@ BEGIN
         ) G
         WHERE (@CompanyId = 0 OR CASE WHEN H.CompanyId IN (1008, 1009) THEN 1007 ELSE H.CompanyId END = @CompanyId)
           AND (@ACCODE = '' OR RTRIM(H.PARTYSTATIONCODE) IN (SELECT AccCode FROM @TargetAccounts))
-          AND H.DOCDATE <= @TDATE
+ 
+         AND H.DOCDATE <= @TDATE
           AND ISNULL(H.PEXPAMT3, 0) > 0
           AND ISNULL(H.IsDeleted, 0) = 0;
 
@@ -573,7 +591,8 @@ BEGIN
           AND (@ACCODE = '' OR RTRIM(H.PEXPCODE2) IN (SELECT AccCode FROM @TargetAccounts))
           AND H.DOCDATE <= @TDATE
           AND ISNULL(H.PEXPAMT2, 0) > 0
-          AND ISNULL(H.IsDeleted, 0) = 0;
+ 
+         AND ISNULL(H.IsDeleted, 0) = 0;
 
         -- PExpCode 3
         INSERT INTO ACCUMULATED
@@ -582,7 +601,8 @@ BEGIN
             AC1, AC3, ACC, CRAMT, ACTYPE,
             NARRATION, VEHICLENO, STATION, BILLTINO
         )
-        SELECT
+   
+     SELECT
             CASE WHEN H.CompanyId IN (1008, 1009) THEN 1007 ELSE H.CompanyId END,
             H.DOCNO, H.DOCDATE, 'CL',
             SUBSTRING(H.PEXPCODE3, 1, 3), SUBSTRING(H.PEXPCODE3, 4, 3),
@@ -630,7 +650,8 @@ BEGIN
             SELECT
                 H.CompanyId, H.INVNO, H.WH_IT_REC, 'WT',
                 SUBSTRING(H.CUSCODE, 1, 3), SUBSTRING(H.CUSCODE, 4, 3),
-                CASE WHEN @ACCODE <> '' THEN @ACCODE ELSE H.CUSCODE END,
+      
+          CASE WHEN @ACCODE <> '' THEN @ACCODE ELSE H.CUSCODE END,
                 ISNULL(H.WH_IT_AMT, 0), '3',
                 'WITH-HOLDING INCOME TAX ON SALES INVOICE # ' + ISNULL(CONVERT(VARCHAR(50), H.INVNO), '') + ' @ ' + ISNULL(CONVERT(VARCHAR(50), H.WH_IT), '') + ' %'
             FROM ISSHEAD H
@@ -652,7 +673,8 @@ BEGIN
                 '051', '007',
                 '051007',
                 ISNULL(H.WH_IT_AMT, 0), '3',
-                'W/H I.TAX ON INV.# ' + ISNULL(CONVERT(VARCHAR(50), H.INVNO), '') + ' @ ' + ISNULL(CONVERT(VARCHAR(50), H.WH_IT), '') + ' % Cus. ' + LEFT(RTRIM(H.CUSNAME), 30)
+      
+          'W/H I.TAX ON INV.# ' + ISNULL(CONVERT(VARCHAR(50), H.INVNO), '') + ' @ ' + ISNULL(CONVERT(VARCHAR(50), H.WH_IT), '') + ' % Cus. ' + LEFT(RTRIM(H.CUSNAME), 30)
             FROM ISSHEAD H
             WHERE H.CompanyId = 1006
               AND ISNULL(H.WH_IT_REC, '3000-12-31') <= @TDATE
@@ -690,7 +712,8 @@ BEGIN
             SELECT
                 H.CompanyId, H.INVNO, H.WH_ST_REC, 'WT',
                 '053', '001',
-                '053001',
+  
+              '053001',
                 ISNULL(H.WH_ST_AMT, 0), '3',
                 'WITH-HOLDING SALES TAX ON SALES INVOICE # ' + ISNULL(CONVERT(VARCHAR(50), H.INVNO), '') + ' @ ' + ISNULL(CONVERT(VARCHAR(50), H.WH_ST), '') + ' %'
             FROM ISSHEAD H
@@ -699,7 +722,8 @@ BEGIN
               AND ISNULL(H.WH_ST_AMT, 0) > 0
               AND H.WH_ST_REC IS NOT NULL
               AND (@ACCODE = '' OR @ACCODE = '053001')
-              AND ISNULL(H.IsDeleted, 0) = 0;
+         
+     AND ISNULL(H.IsDeleted, 0) = 0;
         END;
 
         /* =========================================================
@@ -718,6 +742,7 @@ BEGIN
             SELECT SUM(ISNULL(A.DRAMT, 0) - ISNULL(A.CRAMT, 0))
             FROM ACCUMULATED A
             WHERE A.VODATE < @SDATE
+
         )
         FROM ACCOPEN AO;
 
